@@ -11,7 +11,7 @@
         height: 100%;
         margin: 0;
         overflow: hidden;
-        background: #0f172a;
+        background: #f3f0ea;
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
           "Segoe UI", sans-serif;
@@ -22,180 +22,216 @@
         width: 100vw;
         height: 100vh;
         overflow: hidden;
+        color: #171717;
         background:
-          radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.38), transparent 34%),
-          radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.28), transparent 34%),
-          linear-gradient(135deg, #020617 0%, #0f172a 48%, #111827 100%);
-        color: white;
+          linear-gradient(90deg, rgba(243, 240, 234, 0.94), rgba(243, 240, 234, 0.7)),
+          url("./assets/main-cover.jpg");
+        background-size: cover;
+        background-position: center;
       }
 
-      .grain {
+      .noise {
         position: absolute;
         inset: 0;
         opacity: 0.08;
         background-image:
-          linear-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.16) 1px, transparent 1px);
-        background-size: 52px 52px;
+          linear-gradient(rgba(0, 0, 0, 0.18) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 0, 0, 0.18) 1px, transparent 1px);
+        background-size: 48px 48px;
       }
 
-      .orb {
-        position: absolute;
-        width: 34vw;
-        height: 34vw;
-        border-radius: 999px;
-        right: -8vw;
-        top: -8vw;
-        background: rgba(129, 140, 248, 0.28);
-        filter: blur(10px);
-      }
-
-      .panel {
+      .left {
         position: absolute;
         left: 7vw;
-        top: 14vh;
-        width: min(760px, 72vw);
-        padding: clamp(28px, 4vw, 58px);
-        border-radius: 42px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        box-shadow: 0 40px 130px rgba(0, 0, 0, 0.34);
-        backdrop-filter: blur(18px);
+        top: 12vh;
+        width: min(720px, 62vw);
       }
 
-      .badge {
+      .tag {
         display: inline-flex;
-        padding: 10px 16px;
+        padding: 10px 15px;
+        border: 1px solid rgba(23, 23, 23, 0.14);
         border-radius: 999px;
-        background: rgba(129, 140, 248, 0.18);
-        color: #c7d2fe;
-        font-size: clamp(16px, 1.6vw, 24px);
-        font-weight: 800;
-        letter-spacing: 0.08em;
+        background: rgba(255, 255, 255, 0.56);
+        font-size: clamp(14px, 1.2vw, 19px);
+        font-weight: 850;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
       }
 
       .title {
         margin-top: 28px;
-        font-size: clamp(58px, 8vw, 118px);
-        line-height: 0.9;
-        letter-spacing: -0.07em;
+        font-size: clamp(64px, 8vw, 122px);
+        line-height: 0.86;
+        letter-spacing: -0.08em;
         font-weight: 950;
       }
 
-      .title span {
-        color: #a5b4fc;
+      .title em {
+        color: #9f1239;
+        font-style: normal;
       }
 
-      .subtitle {
-        margin-top: 26px;
-        width: min(620px, 64vw);
-        color: rgba(255, 255, 255, 0.68);
-        font-size: clamp(22px, 2.1vw, 34px);
+      .desc {
+        margin-top: 28px;
+        width: min(560px, 52vw);
+        color: rgba(23, 23, 23, 0.64);
+        font-size: clamp(22px, 2vw, 31px);
         line-height: 1.32;
-        font-weight: 500;
+        font-weight: 520;
       }
 
-      .chips {
-        display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-        margin-top: 34px;
-      }
-
-      .chip {
-        padding: 12px 16px;
+      .cta {
+        margin-top: 36px;
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 22px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.78);
-        font-size: clamp(14px, 1.4vw, 20px);
-        font-weight: 700;
+        background: #171717;
+        color: white;
+        font-size: clamp(16px, 1.3vw, 21px);
+        font-weight: 850;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
       }
 
-      .floating-card {
+      .cta-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #fb7185;
+      }
+
+      .cards {
         position: absolute;
-        right: 7vw;
-        bottom: 16vh;
-        width: min(360px, 34vw);
-        padding: 26px;
-        border-radius: 32px;
+        right: 6vw;
+        top: 12vh;
+        width: min(640px, 43vw);
+        height: 74vh;
+      }
+
+      .card {
+        position: absolute;
+        width: 44%;
+        height: 42%;
+        overflow: hidden;
+        border-radius: 34px;
         background: white;
-        color: #111827;
-        box-shadow: 0 34px 100px rgba(0, 0, 0, 0.28);
+        border: 1px solid rgba(23, 23, 23, 0.1);
+        box-shadow: 0 34px 100px rgba(23, 23, 23, 0.18);
+        transform-origin: center;
       }
 
-      .floating-card .label {
-        color: #64748b;
-        font-size: clamp(14px, 1.3vw, 20px);
-        font-weight: 800;
+      .card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
       }
 
-      .floating-card .value {
-        margin-top: 12px;
-        font-size: clamp(42px, 5vw, 72px);
-        line-height: 0.9;
-        letter-spacing: -0.06em;
-        font-weight: 950;
+      .card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(0deg, rgba(0, 0, 0, 0.28), transparent 50%);
       }
 
-      .progress-wrap {
+      .card-label {
+        position: absolute;
+        left: 16px;
+        bottom: 16px;
+        z-index: 2;
+        padding: 8px 11px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.78);
+        color: #171717;
+        font-size: 13px;
+        font-weight: 850;
+        backdrop-filter: blur(14px);
+      }
+
+      .card-1 {
+        left: 0;
+        top: 4%;
+      }
+
+      .card-2 {
+        right: 2%;
+        top: 22%;
+      }
+
+      .card-3 {
+        left: 17%;
+        bottom: 0;
+      }
+
+      .counter {
         position: absolute;
         left: 7vw;
-        right: 7vw;
-        bottom: 7vh;
+        bottom: 6vh;
+        color: rgba(23, 23, 23, 0.42);
+        font-size: clamp(16px, 1.35vw, 22px);
+        font-weight: 850;
+      }
+
+      .bar-wrap {
+        position: absolute;
+        right: 6vw;
+        bottom: 6vh;
+        width: min(520px, 38vw);
         height: 8px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.14);
         overflow: hidden;
+        background: rgba(23, 23, 23, 0.12);
       }
 
-      .progress {
-        height: 100%;
+      .bar {
         width: 0%;
+        height: 100%;
         border-radius: 999px;
-        background: #818cf8;
-      }
-
-      .frame {
-        position: absolute;
-        right: 7vw;
-        top: 7vh;
-        color: rgba(255, 255, 255, 0.56);
-        font-size: clamp(16px, 1.5vw, 24px);
-        font-weight: 800;
+        background: #9f1239;
       }
     </style>
   </head>
 
   <body>
     <div class="scene">
-      <div class="grain"></div>
-      <div class="orb"></div>
+      <div class="noise"></div>
 
-      <div class="frame">Frame 0</div>
+      <section class="left">
+        <div class="tag">Visual Asset System</div>
+        <div class="title">Swap images.<br /><em>Keep motion.</em></div>
+        <div class="desc">
+          Upload your own visuals into every detected asset slot without editing
+          the HTML by hand.
+        </div>
+        <div class="cta">
+          <span class="cta-dot"></span>
+          Render with your assets
+        </div>
+      </section>
 
-      <div class="panel">
-        <div class="badge">Remotion HTML Test</div>
-        <div class="title">Paste code.<br /><span>Render video.</span></div>
-        <div class="subtitle">
-          This full HTML/CSS/JS file is controlled by the Remotion frame timeline.
+      <section class="cards">
+        <div class="card card-1">
+          <img src="./assets/product-1.png" alt="Product 1" />
+          <div class="card-label">Asset 01</div>
         </div>
 
-        <div class="chips">
-          <div class="chip">HTML</div>
-          <div class="chip">CSS</div>
-          <div class="chip">JS</div>
-          <div class="chip">Frame-aware</div>
+        <div class="card card-2">
+          <img src="./assets/product-2.png" alt="Product 2" />
+          <div class="card-label">Asset 02</div>
         </div>
-      </div>
 
-      <div class="floating-card">
-        <div class="label">Timeline progress</div>
-        <div class="value">0%</div>
-      </div>
+        <div class="card card-3">
+          <img src="./assets/product-3.png" alt="Product 3" />
+          <div class="card-label">Asset 03</div>
+        </div>
+      </section>
 
-      <div class="progress-wrap">
-        <div class="progress"></div>
+      <div class="counter">4 detected assets expected</div>
+
+      <div class="bar-wrap">
+        <div class="bar"></div>
       </div>
     </div>
 
@@ -204,48 +240,50 @@
         return Math.max(min, Math.min(max, value))
       }
 
-      function easeOutCubic(t) {
+      function easeOut(t) {
         return 1 - Math.pow(1 - t, 3)
+      }
+
+      function easeInOut(t) {
+        return t < 0.5
+          ? 4 * t * t * t
+          : 1 - Math.pow(-2 * t + 2, 3) / 2
       }
 
       window.remotionRender = function (ctx) {
         const { frame, progress } = ctx
 
-        const panel = document.querySelector(".panel")
-        const floatingCard = document.querySelector(".floating-card")
-        const orb = document.querySelector(".orb")
-        const progressBar = document.querySelector(".progress")
-        const frameText = document.querySelector(".frame")
-        const value = document.querySelector(".value")
-        const chips = document.querySelectorAll(".chip")
+        const left = document.querySelector(".left")
+        const cards = document.querySelectorAll(".card")
+        const cta = document.querySelector(".cta")
+        const counter = document.querySelector(".counter")
+        const bar = document.querySelector(".bar")
+        const scene = document.querySelector(".scene")
 
-        const intro = easeOutCubic(clamp(frame / 36, 0, 1))
-        const cardIn = easeOutCubic(clamp((frame - 24) / 34, 0, 1))
-        const orbMove = progress * 160
+        const intro = easeOut(clamp(frame / 34, 0, 1))
+        const ctaIn = easeOut(clamp((frame - 28) / 22, 0, 1))
 
-        panel.style.opacity = String(intro)
-        panel.style.transform = `translateY(${(1 - intro) * 70}px) scale(${
-          0.96 + intro * 0.04
-        })`
+        left.style.opacity = String(intro)
+        left.style.transform = `translateY(${(1 - intro) * 62}px)`
 
-        floatingCard.style.opacity = String(cardIn)
-        floatingCard.style.transform = `translateY(${(1 - cardIn) * 80}px) rotate(${
-          (1 - cardIn) * 5
-        }deg)`
+        cta.style.opacity = String(ctaIn)
+        cta.style.transform = `translateY(${(1 - ctaIn) * 24}px)`
 
-        orb.style.transform = `translate(${-orbMove}px, ${orbMove * 0.45}px) scale(${
-          1 + progress * 0.25
-        })`
+        cards.forEach((card, index) => {
+          const enter = easeOut(clamp((frame - 14 - index * 10) / 34, 0, 1))
+          const drift = Math.sin(progress * Math.PI * 2 + index * 1.4) * 16
+          const rotateBase = [-7, 5, -3][index] || 0
 
-        progressBar.style.width = `${progress * 100}%`
-        value.textContent = `${Math.round(progress * 100)}%`
-        frameText.textContent = `Frame ${frame}`
-
-        chips.forEach((chip, index) => {
-          const chipIn = easeOutCubic(clamp((frame - 38 - index * 5) / 18, 0, 1))
-          chip.style.opacity = String(chipIn)
-          chip.style.transform = `translateY(${(1 - chipIn) * 18}px)`
+          card.style.opacity = String(enter)
+          card.style.transform = `translateY(${(1 - enter) * 90 + drift}px) rotate(${
+            rotateBase * enter
+          }deg) scale(${0.9 + enter * 0.1})`
         })
+
+        counter.style.opacity = String(clamp((frame - 48) / 22, 0, 1))
+        bar.style.width = `${easeInOut(progress) * 100}%`
+
+        scene.style.backgroundPosition = `${50 + progress * 8}% center`
       }
     </script>
   </body>

@@ -1,0 +1,85 @@
+{
+  "assets": {
+    "./photo.jpg": {
+      "originalValue": "./photo.jpg",
+      "fileName": "Screenshot 2026-05-17 203745.png",
+      "storedFileName": "Li9waG90by5qcGc-1781306440128-Screenshot-2026-05-17-203745.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9waG90by5qcGc-1781306440128-Screenshot-2026-05-17-203745.png",
+      "mimeType": "image/png",
+      "sizeBytes": 238581,
+      "uploadedAt": "2026-06-12T23:20:40.132Z"
+    },
+    "./images/hero.jpg": {
+      "originalValue": "./images/hero.jpg",
+      "fileName": "Screenshot 2026-05-17 203132.png",
+      "storedFileName": "Li9pbWFnZXMvaGVyby5qcGc-1781306538003-Screenshot-2026-05-17-203132.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9pbWFnZXMvaGVyby5qcGc-1781306538003-Screenshot-2026-05-17-203132.png",
+      "mimeType": "image/png",
+      "sizeBytes": 235576,
+      "uploadedAt": "2026-06-12T23:22:18.006Z"
+    },
+    "./images/photo-1.jpg": {
+      "originalValue": "./images/photo-1.jpg",
+      "fileName": "Screenshot 2026-05-18 173347.png",
+      "storedFileName": "Li9pbWFnZXMvcGhvdG8tMS5qcGc-1781306564086-Screenshot-2026-05-18-173347.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9pbWFnZXMvcGhvdG8tMS5qcGc-1781306564086-Screenshot-2026-05-18-173347.png",
+      "mimeType": "image/png",
+      "sizeBytes": 338152,
+      "uploadedAt": "2026-06-12T23:22:44.088Z"
+    },
+    "./images/photo-2.jpg": {
+      "originalValue": "./images/photo-2.jpg",
+      "fileName": "Screenshot 2026-05-17 201422.png",
+      "storedFileName": "Li9pbWFnZXMvcGhvdG8tMi5qcGc-1781306614327-Screenshot-2026-05-17-201422.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9pbWFnZXMvcGhvdG8tMi5qcGc-1781306614327-Screenshot-2026-05-17-201422.png",
+      "mimeType": "image/png",
+      "sizeBytes": 55472,
+      "uploadedAt": "2026-06-12T23:23:34.330Z"
+    },
+    "./images/photo-3.jpg": {
+      "originalValue": "./images/photo-3.jpg",
+      "fileName": "Screenshot 2026-05-18 210532.png",
+      "storedFileName": "Li9pbWFnZXMvcGhvdG8tMy5qcGc-1781306775337-Screenshot-2026-05-18-210532.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9pbWFnZXMvcGhvdG8tMy5qcGc-1781306775337-Screenshot-2026-05-18-210532.png",
+      "mimeType": "image/png",
+      "sizeBytes": 566294,
+      "uploadedAt": "2026-06-12T23:26:15.339Z"
+    },
+    "./assets/product-1.png": {
+      "originalValue": "./assets/product-1.png",
+      "fileName": "Screenshot 2026-05-19 093629.png",
+      "storedFileName": "Li9hc3NldHMvcHJvZHVjdC0xLnBuZw-1781307167628-Screenshot-2026-05-19-093629.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9hc3NldHMvcHJvZHVjdC0xLnBuZw-1781307167628-Screenshot-2026-05-19-093629.png",
+      "mimeType": "image/png",
+      "sizeBytes": 89313,
+      "uploadedAt": "2026-06-12T23:32:47.631Z"
+    },
+    "./assets/product-2.png": {
+      "originalValue": "./assets/product-2.png",
+      "fileName": "Screenshot 2026-05-18 210532.png",
+      "storedFileName": "Li9hc3NldHMvcHJvZHVjdC0yLnBuZw-1781307055774-Screenshot-2026-05-18-210532.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9hc3NldHMvcHJvZHVjdC0yLnBuZw-1781307055774-Screenshot-2026-05-18-210532.png",
+      "mimeType": "image/png",
+      "sizeBytes": 566294,
+      "uploadedAt": "2026-06-12T23:30:55.778Z"
+    },
+    "./assets/product-3.png": {
+      "originalValue": "./assets/product-3.png",
+      "fileName": "Screenshot 2026-05-20 180056.png",
+      "storedFileName": "Li9hc3NldHMvcHJvZHVjdC0zLnBuZw-1781307039767-Screenshot-2026-05-20-180056.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9hc3NldHMvcHJvZHVjdC0zLnBuZw-1781307039767-Screenshot-2026-05-20-180056.png",
+      "mimeType": "image/png",
+      "sizeBytes": 488478,
+      "uploadedAt": "2026-06-12T23:30:39.770Z"
+    },
+    "./assets/main-cover.jpg": {
+      "originalValue": "./assets/main-cover.jpg",
+      "fileName": "Screenshot 2026-05-17 201422.png",
+      "storedFileName": "Li9hc3NldHMvbWFpbi1jb3Zlci5qcGc-1781306869276-Screenshot-2026-05-17-201422.png",
+      "replacementUrl": "http://localhost:3002/assets/active/Li9hc3NldHMvbWFpbi1jb3Zlci5qcGc-1781306869276-Screenshot-2026-05-17-201422.png",
+      "mimeType": "image/png",
+      "sizeBytes": 55472,
+      "uploadedAt": "2026-06-12T23:27:49.277Z"
+    }
+  }
+}

@@ -1,6 +1,14 @@
 import http from "node:http"
 import path from "node:path"
-import { readFile, writeFile } from "node:fs/promises"
+import { createReadStream } from "node:fs"
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -21,19 +29,157 @@ const currentDurationFile = path.join(
   "current-duration.ts",
 )
 
-const currentCodeFile = path.join(
+// IMPORTANT:
+// Runtime files must stay outside src.
+// If uploads are saved inside src, Vite will hot reload the page.
+const htmlCodeRendererDir = path.join(
   rootDir,
-  "src",
-  "remotion",
-  "html-code-renderer",
-  "current-code.html",
+  "runtime",
+  "remotion-html-renderer",
 )
 
+const currentCodeFile = path.join(htmlCodeRendererDir, "current-code.html")
+
+const currentAssetMapFile = path.join(
+  htmlCodeRendererDir,
+  "current-asset-map.json",
+)
+
+const activeAssetsDir = path.join(htmlCodeRendererDir, "assets", "active")
+const unusedAssetsDir = path.join(htmlCodeRendererDir, "assets", "unused")
+
 const allowedScreens = ["16x9", "9x16", "1x1", "4x5"]
+
+const assetExtensions = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+  ".svg",
+  ".avif",
+  ".mp4",
+  ".webm",
+  ".mov",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".aac",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+]
+
+const defaultCode = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: white;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      .scene {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        background: white;
+        overflow: hidden;
+      }
+
+      .title {
+        position: absolute;
+        left: 80px;
+        top: 80px;
+        color: #111827;
+        font-size: 72px;
+        font-weight: 900;
+        letter-spacing: -3px;
+        line-height: 0.95;
+      }
+
+      .box {
+        position: absolute;
+        left: 80px;
+        top: 220px;
+        width: 240px;
+        height: 240px;
+        border-radius: 36px;
+        background: #4f46e5;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="scene">
+      <div class="title">HTML Code Video</div>
+      <div class="box"></div>
+    </div>
+
+    <script>
+      window.remotionRender = function (ctx) {
+        const { progress } = ctx
+        const box = document.querySelector(".box")
+
+        if (!box) return
+
+        box.style.transform = \`translateX(\${progress * 600}px) rotate(\${
+          progress * 180
+        }deg)\`
+      }
+    </script>
+  </body>
+</html>
+`
 
 const frameBridgeScript = `
 <script>
   window.__REMOTION_FRAME_BRIDGE_V2__ = true
+
+  function __waitForImages() {
+    var images = Array.prototype.slice.call(document.images || [])
+
+    return Promise.all(
+      images.map(function (img) {
+        if (img.complete) return Promise.resolve()
+
+        if (typeof img.decode === "function") {
+          return img.decode().catch(function () {})
+        }
+
+        return new Promise(function (resolve) {
+          img.onload = resolve
+          img.onerror = resolve
+        })
+      })
+    )
+  }
+
+  async function __waitForFrameReady() {
+    var tasks = []
+
+    if (document.fonts && document.fonts.ready) {
+      tasks.push(document.fonts.ready.catch(function () {}))
+    }
+
+    tasks.push(__waitForImages())
+
+    await Promise.race([
+      Promise.all(tasks),
+      new Promise(function (resolve) {
+        setTimeout(resolve, 1000)
+      }),
+    ])
+  }
 
   window.addEventListener("message", async function (event) {
     const data = event.data
@@ -48,6 +194,8 @@ const frameBridgeScript = `
           await result
         }
       }
+
+      await __waitForFrameReady()
 
       window.parent.postMessage(
         {
@@ -73,6 +221,28 @@ const frameBridgeScript = `
 </script>
 `
 
+async function ensureStorage() {
+  await mkdir(htmlCodeRendererDir, { recursive: true })
+  await mkdir(activeAssetsDir, { recursive: true })
+  await mkdir(unusedAssetsDir, { recursive: true })
+
+  try {
+    await stat(currentAssetMapFile)
+  } catch {
+    await writeFile(
+      currentAssetMapFile,
+      JSON.stringify({ assets: {} }, null, 2),
+      "utf8",
+    )
+  }
+
+  try {
+    await stat(currentCodeFile)
+  } catch {
+    await writeFile(currentCodeFile, defaultCode, "utf8")
+  }
+}
+
 function injectFrameBridge(html) {
   if (html.includes("__REMOTION_FRAME_BRIDGE_V2__")) {
     return html
@@ -89,6 +259,21 @@ function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173")
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
   res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+}
+
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json",
+  })
+
+  res.end(JSON.stringify(data))
+}
+
+function sendError(res, statusCode, error) {
+  sendJson(res, statusCode, {
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+  })
 }
 
 function readBody(req) {
@@ -109,6 +294,313 @@ function readBody(req) {
 
     req.on("error", reject)
   })
+}
+
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+
+  const mimeMap = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".avif": "image/avif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".aac": "audio/aac",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json",
+  }
+
+  return mimeMap[ext] || "application/octet-stream"
+}
+
+function hasAssetExtension(value) {
+  const cleanValue = value.split("?")[0].split("#")[0].toLowerCase()
+
+  return assetExtensions.some((extension) => cleanValue.endsWith(extension))
+}
+
+function getAssetType(value) {
+  const cleanValue = value.split("?")[0].split("#")[0].toLowerCase()
+
+  if (
+    [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".avif"].some((ext) =>
+      cleanValue.endsWith(ext),
+    )
+  ) {
+    return "image"
+  }
+
+  if ([".mp4", ".webm", ".mov"].some((ext) => cleanValue.endsWith(ext))) {
+    return "video"
+  }
+
+  if (
+    [".mp3", ".wav", ".ogg", ".aac"].some((ext) =>
+      cleanValue.endsWith(ext),
+    )
+  ) {
+    return "audio"
+  }
+
+  if (
+    [".woff", ".woff2", ".ttf", ".otf"].some((ext) =>
+      cleanValue.endsWith(ext),
+    )
+  ) {
+    return "font"
+  }
+
+  return "unknown"
+}
+
+function getSourceType(value) {
+  if (value.startsWith("{{asset:")) return "slot"
+  if (value.startsWith("data:")) return "base64"
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return "external"
+  }
+  if (value.startsWith("//")) return "external"
+  if (value.startsWith("#")) return "internal"
+
+  return "local"
+}
+
+function shouldIgnoreAsset(value) {
+  if (!value) return true
+
+  const trimmed = value.trim()
+
+  if (!trimmed) return true
+  if (trimmed.startsWith("#")) return true
+  if (trimmed.startsWith("mailto:")) return true
+  if (trimmed.startsWith("tel:")) return true
+  if (trimmed.startsWith("javascript:")) return true
+  if (trimmed.startsWith("blob:")) return true
+
+  return false
+}
+
+function normalizeAssetValue(value) {
+  return value.trim().replace(/^['"]|['"]$/g, "")
+}
+
+function createAssetRecord(value, detectionSource) {
+  const normalizedValue = normalizeAssetValue(value)
+  const sourceType = getSourceType(normalizedValue)
+
+  return {
+    id: Buffer.from(normalizedValue).toString("base64url"),
+    value: normalizedValue,
+    detectionSource,
+    sourceType,
+    assetType: sourceType === "slot" ? "slot" : getAssetType(normalizedValue),
+    replaceable: sourceType !== "base64" && sourceType !== "internal",
+  }
+}
+
+function addAsset(assetMap, value, detectionSource) {
+  const normalizedValue = normalizeAssetValue(value)
+
+  if (shouldIgnoreAsset(normalizedValue)) return
+
+  const sourceType = getSourceType(normalizedValue)
+
+  if (
+    sourceType !== "slot" &&
+    sourceType !== "base64" &&
+    !hasAssetExtension(normalizedValue)
+  ) {
+    return
+  }
+
+  if (!assetMap.has(normalizedValue)) {
+    assetMap.set(
+      normalizedValue,
+      createAssetRecord(normalizedValue, detectionSource),
+    )
+  }
+}
+
+function scanSrcset(assetMap, srcsetValue) {
+  const parts = srcsetValue.split(",")
+
+  for (const part of parts) {
+    const candidate = part.trim().split(/\s+/)[0]
+
+    addAsset(assetMap, candidate, "srcset")
+  }
+}
+
+function scanAssetsFromCode(code) {
+  const assetMap = new Map()
+
+  const slotRegex = /\{\{asset:([a-zA-Z0-9_-]+)\}\}/g
+
+  for (const match of code.matchAll(slotRegex)) {
+    addAsset(assetMap, `{{asset:${match[1]}}}`, "asset-slot")
+  }
+
+  const htmlAssetRegex =
+    /\b(src|href|poster)\s*=\s*["']([^"']+)["']/gi
+
+  for (const match of code.matchAll(htmlAssetRegex)) {
+    addAsset(assetMap, match[2], `html-${match[1].toLowerCase()}`)
+  }
+
+  const srcsetRegex = /\bsrcset\s*=\s*["']([^"']+)["']/gi
+
+  for (const match of code.matchAll(srcsetRegex)) {
+    scanSrcset(assetMap, match[1])
+  }
+
+  const cssUrlRegex = /url\(\s*(['"]?)(.*?)\1\s*\)/gi
+
+  for (const match of code.matchAll(cssUrlRegex)) {
+    addAsset(assetMap, match[2], "css-url")
+  }
+
+  const jsStringAssetRegex =
+    /["'`]([^"'`]+\.(jpg|jpeg|png|webp|gif|svg|avif|mp4|webm|mov|mp3|wav|ogg|aac|woff|woff2|ttf|otf)(\?[^"'`]*)?(#[^"'`]*)?)["'`]/gi
+
+  for (const match of code.matchAll(jsStringAssetRegex)) {
+    addAsset(assetMap, match[1], "js-string")
+  }
+
+  return Array.from(assetMap.values())
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function rewriteCodeWithAssetMap(code, assetMap) {
+  let output = code
+  const assets = assetMap.assets || {}
+
+  for (const [originalValue, assetData] of Object.entries(assets)) {
+    if (!assetData || !assetData.replacementUrl) continue
+
+    output = output.replace(
+      new RegExp(escapeRegExp(originalValue), "g"),
+      assetData.replacementUrl,
+    )
+  }
+
+  return output
+}
+
+function sanitizeFileName(fileName) {
+  const ext = path.extname(fileName).toLowerCase()
+  const base = path
+    .basename(fileName, ext)
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 80)
+
+  const safeBase = base || "asset"
+  const safeExt = ext || ".bin"
+
+  return `${safeBase}${safeExt}`
+}
+
+function parseDataUrl(dataUrl) {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+
+  if (!match) {
+    throw new Error("Invalid data URL")
+  }
+
+  const mimeType = match[1]
+  const buffer = Buffer.from(match[2], "base64")
+
+  return {
+    mimeType,
+    buffer,
+  }
+}
+
+async function deleteFileIfExists(filePath) {
+  try {
+    await rm(filePath, {
+      force: true,
+    })
+  } catch {
+    // ignore
+  }
+}
+
+async function deleteStoredAssetFile(storedFileName) {
+  if (!storedFileName || typeof storedFileName !== "string") return
+
+  const safeStoredFileName = path.basename(storedFileName)
+  const filePath = path.join(activeAssetsDir, safeStoredFileName)
+
+  if (!filePath.startsWith(activeAssetsDir)) return
+
+  await deleteFileIfExists(filePath)
+}
+
+async function cleanupOrphanActiveAssets(assetMap) {
+  const usedFiles = new Set(
+    Object.values(assetMap.assets || {})
+      .map((assetData) => assetData?.storedFileName)
+      .filter(Boolean),
+  )
+
+  try {
+    const files = await readdir(activeAssetsDir)
+
+    await Promise.all(
+      files.map(async (fileName) => {
+        if (fileName === ".gitkeep") return
+        if (usedFiles.has(fileName)) return
+
+        await deleteFileIfExists(path.join(activeAssetsDir, fileName))
+      }),
+    )
+  } catch {
+    // ignore
+  }
+}
+
+async function cleanupUnusedAssetsForCode(code, assetMap) {
+  const detectedAssets = scanAssetsFromCode(code)
+  const activeOriginalValues = new Set(
+    detectedAssets.map((asset) => asset.value),
+  )
+
+  const nextAssetMap = {
+    assets: {
+      ...(assetMap.assets || {}),
+    },
+  }
+
+  for (const [originalValue, assetData] of Object.entries(
+    assetMap.assets || {},
+  )) {
+    if (activeOriginalValues.has(originalValue)) continue
+
+    await deleteStoredAssetFile(assetData?.storedFileName)
+    delete nextAssetMap.assets[originalValue]
+  }
+
+  await cleanupOrphanActiveAssets(nextAssetMap)
+
+  return nextAssetMap
 }
 
 async function getCurrentScreen() {
@@ -169,6 +661,123 @@ async function setCurrentCode(code) {
   }
 
   await writeFile(currentCodeFile, code, "utf8")
+
+  const currentAssetMap = await getCurrentAssetMap()
+  const cleanedAssetMap = await cleanupUnusedAssetsForCode(code, currentAssetMap)
+
+  await setCurrentAssetMap(cleanedAssetMap)
+
+  return cleanedAssetMap
+}
+
+async function getCurrentAssetMap() {
+  try {
+    const fileContent = await readFile(currentAssetMapFile, "utf8")
+    return JSON.parse(fileContent)
+  } catch {
+    return {
+      assets: {},
+    }
+  }
+}
+
+async function setCurrentAssetMap(assetMap) {
+  const safeMap =
+    assetMap && typeof assetMap === "object" && assetMap.assets
+      ? assetMap
+      : { assets: {} }
+
+  await writeFile(currentAssetMapFile, JSON.stringify(safeMap, null, 2), "utf8")
+}
+
+async function uploadAssetReplacement({ originalValue, fileName, dataUrl }) {
+  if (!originalValue || typeof originalValue !== "string") {
+    throw new Error("originalValue is required")
+  }
+
+  if (!fileName || typeof fileName !== "string") {
+    throw new Error("fileName is required")
+  }
+
+  if (!dataUrl || typeof dataUrl !== "string") {
+    throw new Error("dataUrl is required")
+  }
+
+  const { mimeType, buffer } = parseDataUrl(dataUrl)
+
+  if (buffer.byteLength > 50 * 1024 * 1024) {
+    throw new Error("File is too large. Max size is 50MB")
+  }
+
+  await mkdir(activeAssetsDir, { recursive: true })
+
+  const assetMap = await getCurrentAssetMap()
+  const previousAsset = assetMap.assets?.[originalValue]
+
+  // Nếu replace file cùng asset thì xóa file cũ ngay.
+  if (previousAsset?.storedFileName) {
+    await deleteStoredAssetFile(previousAsset.storedFileName)
+  }
+
+  const safeFileName = sanitizeFileName(fileName)
+  const assetId = Buffer.from(originalValue).toString("base64url")
+  const storedFileName = `${assetId}-${Date.now()}-${safeFileName}`
+  const outputPath = path.join(activeAssetsDir, storedFileName)
+
+  await writeFile(outputPath, buffer)
+
+  const replacementUrl = `http://localhost:${PORT}/assets/active/${encodeURIComponent(
+    storedFileName,
+  )}`
+
+  assetMap.assets = {
+    ...(assetMap.assets || {}),
+    [originalValue]: {
+      originalValue,
+      fileName,
+      storedFileName,
+      replacementUrl,
+      mimeType,
+      sizeBytes: buffer.byteLength,
+      uploadedAt: new Date().toISOString(),
+    },
+  }
+
+  await setCurrentAssetMap(assetMap)
+  await cleanupOrphanActiveAssets(assetMap)
+
+  return {
+    assetMap,
+    uploadedAsset: assetMap.assets[originalValue],
+  }
+}
+
+async function serveActiveAsset(req, res) {
+  const rawAssetPath = decodeURIComponent(
+    req.url.replace("/assets/active/", ""),
+  )
+
+  const safeAssetPath = path.normalize(rawAssetPath).replace(/^(\.\.[/\\])+/, "")
+  const filePath = path.join(activeAssetsDir, safeAssetPath)
+
+  if (!filePath.startsWith(activeAssetsDir)) {
+    sendError(res, 403, "Invalid asset path")
+    return
+  }
+
+  try {
+    const fileStat = await stat(filePath)
+
+    res.writeHead(200, {
+      "Content-Type": getMimeType(filePath),
+      "Content-Length": fileStat.size,
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    })
+
+    createReadStream(filePath).pipe(res)
+  } catch {
+    sendError(res, 404, "Asset not found")
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -184,27 +793,12 @@ const server = http.createServer(async (req, res) => {
     try {
       const screenPreset = await getCurrentScreen()
 
-      res.writeHead(200, {
-        "Content-Type": "application/json",
+      sendJson(res, 200, {
+        ok: true,
+        screenPreset,
       })
-
-      res.end(
-        JSON.stringify({
-          ok: true,
-          screenPreset,
-        }),
-      )
     } catch (error) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      })
-
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      sendError(res, 500, error)
     }
 
     return
@@ -217,27 +811,12 @@ const server = http.createServer(async (req, res) => {
 
       await setCurrentScreen(screenPreset)
 
-      res.writeHead(200, {
-        "Content-Type": "application/json",
+      sendJson(res, 200, {
+        ok: true,
+        screenPreset,
       })
-
-      res.end(
-        JSON.stringify({
-          ok: true,
-          screenPreset,
-        }),
-      )
     } catch (error) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      })
-
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      sendError(res, 500, error)
     }
 
     return
@@ -247,27 +826,12 @@ const server = http.createServer(async (req, res) => {
     try {
       const durationSeconds = await getCurrentDuration()
 
-      res.writeHead(200, {
-        "Content-Type": "application/json",
+      sendJson(res, 200, {
+        ok: true,
+        durationSeconds,
       })
-
-      res.end(
-        JSON.stringify({
-          ok: true,
-          durationSeconds,
-        }),
-      )
     } catch (error) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      })
-
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      sendError(res, 500, error)
     }
 
     return
@@ -280,27 +844,12 @@ const server = http.createServer(async (req, res) => {
 
       await setCurrentDuration(durationSeconds)
 
-      res.writeHead(200, {
-        "Content-Type": "application/json",
+      sendJson(res, 200, {
+        ok: true,
+        durationSeconds,
       })
-
-      res.end(
-        JSON.stringify({
-          ok: true,
-          durationSeconds,
-        }),
-      )
     } catch (error) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      })
-
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      sendError(res, 500, error)
     }
 
     return
@@ -310,27 +859,12 @@ const server = http.createServer(async (req, res) => {
     try {
       const code = await getCurrentCode()
 
-      res.writeHead(200, {
-        "Content-Type": "application/json",
+      sendJson(res, 200, {
+        ok: true,
+        code,
       })
-
-      res.end(
-        JSON.stringify({
-          ok: true,
-          code,
-        }),
-      )
     } catch (error) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      })
-
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      sendError(res, 500, error)
     }
 
     return
@@ -340,38 +874,122 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await readBody(req)
       const code = body.code || ""
+      const assetMap = await setCurrentCode(code)
 
-      await setCurrentCode(code)
-
-      res.writeHead(200, {
-        "Content-Type": "application/json",
+      sendJson(res, 200, {
+        ok: true,
+        assetMap,
       })
-
-      res.end(
-        JSON.stringify({
-          ok: true,
-        }),
-      )
     } catch (error) {
-      res.writeHead(500, {
-        "Content-Type": "application/json",
-      })
-
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      sendError(res, 500, error)
     }
 
+    return
+  }
+
+  if (req.method === "GET" && req.url === "/asset-map") {
+    try {
+      const assetMap = await getCurrentAssetMap()
+
+      sendJson(res, 200, {
+        ok: true,
+        assetMap,
+      })
+    } catch (error) {
+      sendError(res, 500, error)
+    }
+
+    return
+  }
+
+  if (req.method === "POST" && req.url === "/asset-map") {
+    try {
+      const body = await readBody(req)
+      const assetMap = body.assetMap || { assets: {} }
+
+      await setCurrentAssetMap(assetMap)
+      await cleanupOrphanActiveAssets(assetMap)
+
+      sendJson(res, 200, {
+        ok: true,
+        assetMap,
+      })
+    } catch (error) {
+      sendError(res, 500, error)
+    }
+
+    return
+  }
+
+  if (req.method === "GET" && req.url === "/assets/scan") {
+    try {
+      const code = await getCurrentCode()
+      const detectedAssets = scanAssetsFromCode(code)
+      const assetMap = await getCurrentAssetMap()
+
+      sendJson(res, 200, {
+        ok: true,
+        assets: detectedAssets,
+        assetMap,
+      })
+    } catch (error) {
+      sendError(res, 500, error)
+    }
+
+    return
+  }
+
+  if (req.method === "POST" && req.url === "/assets/scan-code") {
+    try {
+      const body = await readBody(req)
+      const code = typeof body.code === "string" ? body.code : ""
+      const detectedAssets = scanAssetsFromCode(code)
+      const assetMap = await getCurrentAssetMap()
+
+      sendJson(res, 200, {
+        ok: true,
+        assets: detectedAssets,
+        assetMap,
+      })
+    } catch (error) {
+      sendError(res, 500, error)
+    }
+
+    return
+  }
+
+  if (req.method === "POST" && req.url === "/assets/upload") {
+    try {
+      const body = await readBody(req)
+
+      const result = await uploadAssetReplacement({
+        originalValue: body.originalValue,
+        fileName: body.fileName,
+        dataUrl: body.dataUrl,
+      })
+
+      sendJson(res, 200, {
+        ok: true,
+        ...result,
+      })
+    } catch (error) {
+      sendError(res, 500, error)
+    }
+
+    return
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/assets/active/")) {
+    await serveActiveAsset(req, res)
     return
   }
 
   if (req.method === "GET" && req.url?.startsWith("/code-preview.html")) {
     try {
       const code = await getCurrentCode()
-      const htmlWithBridge = injectFrameBridge(code)
+      const assetMap = await getCurrentAssetMap()
+      const rewrittenCode = rewriteCodeWithAssetMap(code, assetMap)
+      const htmlWithBridge = injectFrameBridge(rewrittenCode)
 
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
@@ -390,18 +1008,19 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  res.writeHead(404, {
-    "Content-Type": "application/json",
+  sendJson(res, 404, {
+    ok: false,
+    error: "Not found",
   })
-
-  res.end(
-    JSON.stringify({
-      ok: false,
-      error: "Not found",
-    }),
-  )
 })
 
-server.listen(PORT, () => {
-  console.log(`Remotion control server running at http://localhost:${PORT}`)
-})
+ensureStorage()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`Remotion control server running at http://localhost:${PORT}`)
+    })
+  })
+  .catch((error) => {
+    console.error("Failed to start Remotion control server:", error)
+    process.exit(1)
+  })

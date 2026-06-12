@@ -17,6 +17,10 @@ export function HtmlCodeVideo() {
   const [loadHandle] = useState(() => delayRender("Loading HTML code iframe"))
   const [isIframeReady, setIsIframeReady] = useState(false)
 
+  const iframeSrc = useMemo(() => {
+    return `${CONTROL_SERVER_URL}/code-preview.html?t=${Date.now()}`
+  }, [])
+
   const framePayload = useMemo(
     () => ({
       type: "REMOTION_FRAME",
@@ -56,7 +60,6 @@ export function HtmlCodeVideo() {
     if (!iframeWindow || !isIframeReady) return
 
     const frameHandle = delayRender(`Rendering HTML frame ${frame}`)
-
     let isResolved = false
 
     const finishFrame = () => {
@@ -93,7 +96,6 @@ export function HtmlCodeVideo() {
     }
 
     window.addEventListener("message", onMessage)
-
     iframeWindow.postMessage(framePayload, "*")
 
     return () => {
@@ -113,7 +115,7 @@ export function HtmlCodeVideo() {
       <iframe
         ref={iframeRef}
         title="HTML Code Renderer"
-        src={`${CONTROL_SERVER_URL}/code-preview.html`}
+        src={iframeSrc}
         sandbox="allow-scripts"
         style={{
           width: "100%",
