@@ -20,7 +20,7 @@ export type FirstCompositionProps = {
 };
 
 export const defaultFirstCompositionProps: FirstCompositionProps = {
-    screenPreset: "9x16",
+  screenPreset: "9x16",
   badge: "New App",
   title: "Build serious tools faster.",
   subtitle:
@@ -55,8 +55,14 @@ export function FirstComposition({
   metricValue,
   footer,
 }: FirstCompositionProps) {
-  const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
+  const frame = useCurrentFrame();
+  const heroDuration = Math.round(durationInFrames * 0.38);
+  const workflowDuration = Math.round(durationInFrames * 0.38);
+  const finalDuration = durationInFrames - heroDuration - workflowDuration;
+
+  const workflowStart = heroDuration;
+  const finalStart = heroDuration + workflowDuration;
 
   const outroOpacity = interpolate(
     frame,
@@ -78,15 +84,15 @@ export function FirstComposition({
     >
       <BackgroundGrid />
 
-      <Sequence durationInFrames={90}>
+      <Sequence durationInFrames={heroDuration}>
         <HeroScene badge={badge} title={title} subtitle={subtitle} />
       </Sequence>
 
-      <Sequence from={90} durationInFrames={90}>
+      <Sequence from={workflowStart} durationInFrames={workflowDuration}>
         <WorkflowScene metricLabel={metricLabel} metricValue={metricValue} />
       </Sequence>
 
-      <Sequence from={180} durationInFrames={60}>
+      <Sequence from={finalStart} durationInFrames={finalDuration}>
         <FinalScene title="Ready to build" footer={footer} />
       </Sequence>
     </AbsoluteFill>

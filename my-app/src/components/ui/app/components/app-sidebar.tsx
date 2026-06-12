@@ -34,11 +34,7 @@ const mainNavItems = [
     href: "/analytics",
     icon: BarChart3,
   },
-  {
-    label: "Remotion",
-    href: "/remotion",
-    icon: Film,
-  },
+
   {
     label: "Studio",
     href: "/studio",

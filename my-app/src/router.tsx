@@ -6,7 +6,7 @@ import { OverviewPage } from "@/routes/overview";
 import { ProjectsPage } from "@/routes/projects";
 import { SettingsPage } from "@/routes/settings";
 import { WorkspacePage } from "@/routes/workspace";
-import { StudioPage } from "@/remotion/studio";
+import { StudioPage } from "@/routes/studio";
 export const router = createBrowserRouter([
   {
     path: "/",
