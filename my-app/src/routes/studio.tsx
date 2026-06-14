@@ -1,13 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react"
 import {
   AlertTriangle,
   Check,
   ChevronDown,
   Clock,
   Code2,
+  Crop,
   ExternalLink,
   FileImage,
   RefreshCcw,
+  RotateCcw,
   Save,
   Search,
   Upload,
@@ -25,6 +33,15 @@ const REMOTION_STUDIO_URL = "http://localhost:3001"
 const REMOTION_CONTROL_URL = "http://localhost:3002"
 
 type VideoMode = "natural" | "timeline" | "loop" | "stretch"
+type AssetFrameFit = "cover" | "contain" | "fill"
+
+type AssetFrame = {
+  fit: AssetFrameFit
+  positionX: number
+  positionY: number
+  scale: number
+  rotation: number
+}
 
 type DetectedAsset = {
   id: string
@@ -43,6 +60,7 @@ type AssetMapItem = {
   mimeType: string
   assetType?: "image" | "video" | "audio" | "font" | "unknown"
   videoMode?: VideoMode
+  frame?: AssetFrame
   sizeBytes: number
   uploadedAt: string
   updatedAt?: string
@@ -66,6 +84,14 @@ type AssetConfigResponse = {
   error?: string
 }
 
+const defaultAssetFrame: AssetFrame = {
+  fit: "cover",
+  positionX: 50,
+  positionY: 50,
+  scale: 1,
+  rotation: 0,
+}
+
 const videoModeOptions: Array<{
   value: VideoMode
   label: string
@@ -79,17 +105,39 @@ const videoModeOptions: Array<{
   {
     value: "timeline",
     label: "Timeline sync",
-    description: "Frame 30 = giây 1.0, hợp render chuẩn.",
+    description: "Khi render: frame 30 = giây 1.0.",
   },
   {
     value: "loop",
     label: "Loop sync",
-    description: "Video ngắn tự lặp theo timeline.",
+    description: "Khi render: video ngắn tự lặp theo timeline.",
   },
   {
     value: "stretch",
     label: "Stretch to duration",
-    description: "Kéo video khớp toàn bộ duration.",
+    description: "Khi render: kéo video khớp toàn bộ duration.",
+  },
+]
+
+const frameFitOptions: Array<{
+  value: AssetFrameFit
+  label: string
+  description: string
+}> = [
+  {
+    value: "cover",
+    label: "Cover",
+    description: "Lấp đầy khung, có thể bị crop cạnh.",
+  },
+  {
+    value: "contain",
+    label: "Contain",
+    description: "Hiện đủ ảnh/video, có thể hở viền.",
+  },
+  {
+    value: "fill",
+    label: "Fill",
+    description: "Ép đầy khung, có thể méo tỉ lệ.",
   },
 ]
 
@@ -143,6 +191,47 @@ function isVideoAsset(asset: DetectedAsset, mappedAsset?: AssetMapItem) {
   return false
 }
 
+function isImageAsset(asset: DetectedAsset, mappedAsset?: AssetMapItem) {
+  if (asset.assetType === "image") return true
+  if (mappedAsset?.assetType === "image") return true
+  if (mappedAsset?.mimeType?.startsWith("image/")) return true
+
+  return false
+}
+
+function isFrameAdjustableAsset(
+  asset: DetectedAsset,
+  mappedAsset?: AssetMapItem,
+) {
+  if (!mappedAsset) return false
+
+  return isImageAsset(asset, mappedAsset) || isVideoAsset(asset, mappedAsset)
+}
+
+function getSafeAssetFrame(frame?: AssetFrame): AssetFrame {
+  return {
+    fit: frame?.fit || defaultAssetFrame.fit,
+    positionX:
+      typeof frame?.positionX === "number"
+        ? frame.positionX
+        : defaultAssetFrame.positionX,
+    positionY:
+      typeof frame?.positionY === "number"
+        ? frame.positionY
+        : defaultAssetFrame.positionY,
+    scale:
+      typeof frame?.scale === "number" ? frame.scale : defaultAssetFrame.scale,
+    rotation:
+      typeof frame?.rotation === "number"
+        ? frame.rotation
+        : defaultAssetFrame.rotation,
+  }
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -184,6 +273,15 @@ export function StudioPage() {
     string | null
   >(null)
 
+  const [isFrameEditorOpen, setIsFrameEditorOpen] = useState(false)
+  const [selectedFrameAssetValue, setSelectedFrameAssetValue] = useState<
+    string | null
+  >(null)
+  const [draftFrame, setDraftFrame] =
+    useState<AssetFrame>(defaultAssetFrame)
+  const [isSavingFrame, setIsSavingFrame] = useState(false)
+  const [isFrameDragging, setIsFrameDragging] = useState(false)
+
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const currentScreenPreset = getScreenPreset(selectedScreen)
@@ -191,6 +289,21 @@ export function StudioPage() {
   const studioUrl = useMemo(() => {
     return `${REMOTION_STUDIO_URL}?reload=${reloadKey}`
   }, [reloadKey])
+
+  const selectedFrameAsset = useMemo(() => {
+    if (!selectedFrameAssetValue) return null
+
+    return (
+      detectedAssets.find((asset) => asset.value === selectedFrameAssetValue) ||
+      null
+    )
+  }, [detectedAssets, selectedFrameAssetValue])
+
+  const selectedFrameMappedAsset = useMemo(() => {
+    if (!selectedFrameAssetValue) return undefined
+
+    return assetMap.assets?.[selectedFrameAssetValue]
+  }, [assetMap.assets, selectedFrameAssetValue])
 
   const missingAssets = useMemo(() => {
     return detectedAssets.filter((asset) => {
@@ -465,6 +578,83 @@ export function StudioPage() {
     }
   }
 
+  const openFrameEditor = (asset: DetectedAsset) => {
+    const mappedAsset = assetMap.assets?.[asset.value]
+
+    if (!mappedAsset) return
+
+    setSelectedFrameAssetValue(asset.value)
+    setDraftFrame(getSafeAssetFrame(mappedAsset.frame))
+    setIsFrameEditorOpen(true)
+  }
+
+  const closeFrameEditor = () => {
+    setIsFrameEditorOpen(false)
+    setSelectedFrameAssetValue(null)
+    setDraftFrame(defaultAssetFrame)
+    setIsFrameDragging(false)
+  }
+
+  const updateDraftFrame = (nextFrame: Partial<AssetFrame>) => {
+    setDraftFrame((current) => ({
+      ...current,
+      ...nextFrame,
+    }))
+  }
+
+  const resetDraftFrame = () => {
+    setDraftFrame(defaultAssetFrame)
+  }
+
+  const updateDraftPositionByPointer = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const positionX = ((event.clientX - rect.left) / rect.width) * 100
+    const positionY = ((event.clientY - rect.top) / rect.height) * 100
+
+    updateDraftFrame({
+      positionX: Math.round(clampNumber(positionX, 0, 100)),
+      positionY: Math.round(clampNumber(positionY, 0, 100)),
+    })
+  }
+
+  const saveFrameConfig = async () => {
+    if (!selectedFrameAssetValue) return
+
+    try {
+      setError(null)
+      setIsSavingFrame(true)
+
+      const response = await fetch(`${REMOTION_CONTROL_URL}/assets/frame`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          originalValue: selectedFrameAssetValue,
+          frame: draftFrame,
+        }),
+      })
+
+      const data = (await response.json()) as AssetConfigResponse
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Cannot save frame config")
+      }
+
+      setAssetMap(data.assetMap || { assets: {} })
+      closeFrameEditor()
+
+      // Reload only Remotion iframe so the saved framing is visible immediately.
+      setReloadKey((current) => current + 1)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsSavingFrame(false)
+    }
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-black">
       <iframe
@@ -582,12 +772,12 @@ export function StudioPage() {
       </div>
 
       {isCodeBoxOpen ? (
-        <div className="absolute right-4 top-20 z-50 flex h-[calc(100%-6rem)] w-[900px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1217] text-white shadow-2xl">
+        <div className="absolute right-4 top-20 z-50 flex h-[calc(100%-6rem)] w-[920px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1217] text-white shadow-2xl">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 px-4">
             <div>
               <div className="text-sm font-semibold">HTML/CSS/JS Code Box</div>
               <div className="text-xs text-white/45">
-                Upload không reload. Chọn video behavior trong asset panel.
+                Upload không reload. Adjust frame để chỉnh vùng hiển thị ảnh/video.
               </div>
             </div>
 
@@ -600,7 +790,7 @@ export function StudioPage() {
             </button>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_380px]">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_400px]">
             <div className="min-h-0 border-r border-white/10 p-3">
               {isCodeLoading ? (
                 <div className="flex h-full items-center justify-center text-sm text-white/50">
@@ -667,11 +857,16 @@ export function StudioPage() {
                       const isUpdatingVideoMode =
                         updatingVideoModeValue === asset.value
                       const shouldShowVideoMode = isVideoAsset(asset, mappedAsset)
+                      const shouldShowFrameButton = isFrameAdjustableAsset(
+                        asset,
+                        mappedAsset,
+                      )
                       const currentVideoMode =
                         mappedAsset?.videoMode || "natural"
                       const selectedVideoMode = videoModeOptions.find(
                         (option) => option.value === currentVideoMode,
                       )
+                      const currentFrame = getSafeAssetFrame(mappedAsset?.frame)
 
                       return (
                         <div
@@ -769,6 +964,30 @@ export function StudioPage() {
                             </div>
                           ) : null}
 
+                          {shouldShowFrameButton ? (
+                            <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2">
+                              <div className="mb-2 text-[11px] font-semibold text-white/75">
+                                Frame position
+                              </div>
+
+                              <div className="mb-2 grid grid-cols-2 gap-2 text-[10px] text-white/35">
+                                <div>X: {currentFrame.positionX}%</div>
+                                <div>Y: {currentFrame.positionY}%</div>
+                                <div>Scale: {currentFrame.scale.toFixed(2)}</div>
+                                <div>Fit: {currentFrame.fit}</div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => openFrameEditor(asset)}
+                                className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-[11px] font-semibold text-white/75 transition hover:bg-white/[0.08]"
+                              >
+                                <Crop className="h-3 w-3" />
+                                Adjust frame
+                              </button>
+                            </div>
+                          ) : null}
+
                           {asset.replaceable ? (
                             <div className="mt-3">
                               <input
@@ -849,6 +1068,253 @@ export function StudioPage() {
                 {isCodeSaving ? "Saving..." : "Apply Code"}
               </Button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isFrameEditorOpen && selectedFrameMappedAsset ? (
+        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/70 p-6 text-white backdrop-blur">
+          <div className="flex max-h-[92vh] w-[980px] overflow-hidden rounded-2xl border border-white/10 bg-[#0f1217] shadow-2xl">
+            <div className="flex min-w-0 flex-1 flex-col border-r border-white/10">
+              <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
+                <div>
+                  <div className="text-sm font-semibold">Adjust frame</div>
+                  <div className="max-w-[560px] truncate text-xs text-white/45">
+                    {selectedFrameMappedAsset.fileName}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeFrameEditor}
+                  className="rounded-lg p-2 text-white/60 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex min-h-0 flex-1 items-center justify-center bg-[#05070a] p-6">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onPointerDown={(event) => {
+                    setIsFrameDragging(true)
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    updateDraftPositionByPointer(event)
+                  }}
+                  onPointerMove={(event) => {
+                    if (!isFrameDragging) return
+
+                    updateDraftPositionByPointer(event)
+                  }}
+                  onPointerUp={(event) => {
+                    setIsFrameDragging(false)
+                    event.currentTarget.releasePointerCapture(event.pointerId)
+                  }}
+                  onPointerCancel={() => {
+                    setIsFrameDragging(false)
+                  }}
+                  className="relative aspect-video w-full max-w-[680px] cursor-crosshair overflow-hidden rounded-2xl border border-white/15 bg-black shadow-2xl"
+                >
+                  <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(rgba(255,255,255,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.12)_1px,transparent_1px)] bg-[size:33.333%_33.333%]" />
+
+                  {selectedFrameAsset &&
+                  isVideoAsset(selectedFrameAsset, selectedFrameMappedAsset) ? (
+                    <video
+                      src={selectedFrameMappedAsset.replacementUrl}
+                      muted
+                      playsInline
+                      autoPlay
+                      loop
+                      className="h-full w-full"
+                      style={{
+                        objectFit: draftFrame.fit,
+                        objectPosition: `${draftFrame.positionX}% ${draftFrame.positionY}%`,
+                        transform: `scale(${draftFrame.scale}) rotate(${draftFrame.rotation}deg)`,
+                        transformOrigin: `${draftFrame.positionX}% ${draftFrame.positionY}%`,
+                      }}
+                    />
+                  ) : (
+                    <img
+                      src={selectedFrameMappedAsset.replacementUrl}
+                      alt={selectedFrameMappedAsset.fileName}
+                      className="h-full w-full select-none"
+                      draggable={false}
+                      style={{
+                        objectFit: draftFrame.fit,
+                        objectPosition: `${draftFrame.positionX}% ${draftFrame.positionY}%`,
+                        transform: `scale(${draftFrame.scale}) rotate(${draftFrame.rotation}deg)`,
+                        transformOrigin: `${draftFrame.positionX}% ${draftFrame.positionY}%`,
+                      }}
+                    />
+                  )}
+
+                  <div
+                    className="pointer-events-none absolute z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-black/60"
+                    style={{
+                      left: `${draftFrame.positionX}%`,
+                      top: `${draftFrame.positionY}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <aside className="flex w-[300px] shrink-0 flex-col">
+              <div className="border-b border-white/10 p-4">
+                <div className="text-sm font-semibold">Frame controls</div>
+                <div className="mt-1 text-xs leading-5 text-white/45">
+                  Kéo trực tiếp trên preview hoặc dùng slider để chỉnh vùng ảnh/video.
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold text-white/70">
+                    Fit mode
+                  </label>
+
+                  <select
+                    value={draftFrame.fit}
+                    onChange={(event) => {
+                      updateDraftFrame({
+                        fit: event.target.value as AssetFrameFit,
+                      })
+                    }}
+                    className="h-9 w-full rounded-lg border border-white/10 bg-[#05070a] px-3 text-xs font-semibold text-white outline-none"
+                  >
+                    {frameFitOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-2 text-[11px] leading-4 text-white/35">
+                    {
+                      frameFitOptions.find(
+                        (option) => option.value === draftFrame.fit,
+                      )?.description
+                    }
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs font-semibold text-white/70">
+                    <span>Position X</span>
+                    <span>{draftFrame.positionX}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={draftFrame.positionX}
+                    onChange={(event) => {
+                      updateDraftFrame({
+                        positionX: Number(event.target.value),
+                      })
+                    }}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs font-semibold text-white/70">
+                    <span>Position Y</span>
+                    <span>{draftFrame.positionY}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={draftFrame.positionY}
+                    onChange={(event) => {
+                      updateDraftFrame({
+                        positionY: Number(event.target.value),
+                      })
+                    }}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs font-semibold text-white/70">
+                    <span>Scale</span>
+                    <span>{draftFrame.scale.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.25}
+                    max={4}
+                    step={0.01}
+                    value={draftFrame.scale}
+                    onChange={(event) => {
+                      updateDraftFrame({
+                        scale: Number(event.target.value),
+                      })
+                    }}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs font-semibold text-white/70">
+                    <span>Rotation</span>
+                    <span>{draftFrame.rotation}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={-180}
+                    max={180}
+                    value={draftFrame.rotation}
+                    onChange={(event) => {
+                      updateDraftFrame({
+                        rotation: Number(event.target.value),
+                      })
+                    }}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-white/45">
+                  Save Frame chỉ reload iframe preview, không reload app. Code Box
+                  vẫn giữ nguyên.
+                </div>
+              </div>
+
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-white/10 p-4">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  type="button"
+                  onClick={resetDraftFrame}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Reset
+                </Button>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    type="button"
+                    onClick={closeFrameEditor}
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    type="button"
+                    disabled={isSavingFrame}
+                    onClick={saveFrameConfig}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {isSavingFrame ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       ) : null}

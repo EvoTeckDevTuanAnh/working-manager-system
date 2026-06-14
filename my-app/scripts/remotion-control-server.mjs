@@ -1,6 +1,6 @@
-import http from "node:http";
-import path from "node:path";
-import { createReadStream } from "node:fs";
+import http from "node:http"
+import path from "node:path"
+import { createReadStream } from "node:fs"
 import {
   mkdir,
   readFile,
@@ -8,45 +8,46 @@ import {
   rm,
   stat,
   writeFile,
-} from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+} from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rootDir = path.resolve(__dirname, "..");
-const PORT = 3002;
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const rootDir = path.resolve(__dirname, "..")
+const PORT = 3002
 
 const currentScreenFile = path.join(
   rootDir,
   "src",
   "remotion",
   "current-screen.ts",
-);
+)
 
 const currentDurationFile = path.join(
   rootDir,
   "src",
   "remotion",
   "current-duration.ts",
-);
+)
 
 const htmlCodeRendererDir = path.join(
   rootDir,
   "runtime",
   "remotion-html-renderer",
-);
+)
 
-const currentCodeFile = path.join(htmlCodeRendererDir, "current-code.html");
+const currentCodeFile = path.join(htmlCodeRendererDir, "current-code.html")
 
 const currentAssetMapFile = path.join(
   htmlCodeRendererDir,
   "current-asset-map.json",
-);
+)
 
-const activeAssetsDir = path.join(htmlCodeRendererDir, "assets", "active");
-const unusedAssetsDir = path.join(htmlCodeRendererDir, "assets", "unused");
+const activeAssetsDir = path.join(htmlCodeRendererDir, "assets", "active")
+const unusedAssetsDir = path.join(htmlCodeRendererDir, "assets", "unused")
 
-const allowedScreens = ["16x9", "9x16", "1x1", "4x5"];
-const allowedVideoModes = ["natural", "timeline", "loop", "stretch"];
+const allowedScreens = ["16x9", "9x16", "1x1", "4x5"]
+const allowedVideoModes = ["natural", "timeline", "loop", "stretch"]
+const allowedFrameFits = ["cover", "contain", "fill"]
 
 const assetExtensions = [
   ".jpg",
@@ -67,7 +68,7 @@ const assetExtensions = [
   ".woff2",
   ".ttf",
   ".otf",
-];
+]
 
 const defaultCode = `<!doctype html>
 <html lang="en">
@@ -136,7 +137,7 @@ const defaultCode = `<!doctype html>
     </script>
   </body>
 </html>
-`;
+`
 
 const frameBridgeScript = `
 <script>
@@ -216,35 +217,17 @@ const frameBridgeScript = `
     })
   }
 
-  function __getAssetConfigForVideo(video) {
+  function __getAssetConfigByValue(value) {
+    if (!value) return null
+
     var config = window.__REMOTION_ASSET_CONFIG__ || {}
     var candidates = []
 
-    if (video.currentSrc) candidates.push(video.currentSrc)
-    if (video.src) candidates.push(video.src)
+    candidates.push(value)
 
-    var srcAttr = video.getAttribute("src")
-    if (srcAttr) {
-      candidates.push(srcAttr)
-
-      try {
-        candidates.push(new URL(srcAttr, window.location.href).href)
-      } catch (error) {}
-    }
-
-    var sources = Array.prototype.slice.call(video.querySelectorAll("source"))
-
-    sources.forEach(function (source) {
-      var value = source.getAttribute("src")
-
-      if (!value) return
-
-      candidates.push(value)
-
-      try {
-        candidates.push(new URL(value, window.location.href).href)
-      } catch (error) {}
-    })
+    try {
+      candidates.push(new URL(value, window.location.href).href)
+    } catch (error) {}
 
     for (var i = 0; i < candidates.length; i++) {
       var key = candidates[i]
@@ -263,6 +246,186 @@ const frameBridgeScript = `
     }
 
     return null
+  }
+
+  function __getAssetConfigForMediaElement(element) {
+    if (!element) return null
+
+    var candidates = []
+
+    if (element.currentSrc) candidates.push(element.currentSrc)
+    if (element.src) candidates.push(element.src)
+
+    var srcAttr = element.getAttribute("src")
+    if (srcAttr) candidates.push(srcAttr)
+
+    var sources = Array.prototype.slice.call(element.querySelectorAll("source"))
+
+    sources.forEach(function (source) {
+      var value = source.getAttribute("src")
+
+      if (!value) return
+
+      candidates.push(value)
+    })
+
+    for (var i = 0; i < candidates.length; i++) {
+      var assetConfig = __getAssetConfigByValue(candidates[i])
+
+      if (assetConfig) {
+        return assetConfig
+      }
+    }
+
+    return null
+  }
+
+  function __getAssetConfigForVideo(video) {
+    return __getAssetConfigForMediaElement(video)
+  }
+
+  function __normalizeFrameConfig(frame) {
+    var safeFrame = frame || {}
+
+    var fit = safeFrame.fit || "cover"
+
+    if (fit !== "cover" && fit !== "contain" && fit !== "fill") {
+      fit = "cover"
+    }
+
+    return {
+      fit: fit,
+      positionX:
+        typeof safeFrame.positionX === "number" ? safeFrame.positionX : 50,
+      positionY:
+        typeof safeFrame.positionY === "number" ? safeFrame.positionY : 50,
+      scale: typeof safeFrame.scale === "number" ? safeFrame.scale : 1,
+      rotation: typeof safeFrame.rotation === "number" ? safeFrame.rotation : 0,
+    }
+  }
+
+  function __getObjectFitValue(fit) {
+    if (fit === "fill") return "fill"
+    if (fit === "contain") return "contain"
+
+    return "cover"
+  }
+
+  function __getBackgroundSizeValue(fit) {
+    if (fit === "fill") return "100% 100%"
+    if (fit === "contain") return "contain"
+
+    return "cover"
+  }
+
+  function __applyFrameToMediaElement(element, assetConfig) {
+    if (!element || !assetConfig || !assetConfig.frame) return
+
+    var frame = __normalizeFrameConfig(assetConfig.frame)
+
+    if (!element.dataset.remotionOriginalTransform) {
+      element.dataset.remotionOriginalTransform =
+        element.style.transform || "__empty__"
+    }
+
+    var originalTransform =
+      element.dataset.remotionOriginalTransform === "__empty__"
+        ? ""
+        : element.dataset.remotionOriginalTransform
+
+    element.style.objectFit = __getObjectFitValue(frame.fit)
+    element.style.objectPosition = frame.positionX + "% " + frame.positionY + "%"
+    element.style.transformOrigin =
+      frame.positionX + "% " + frame.positionY + "%"
+
+    var frameTransform =
+      " scale(" + frame.scale + ") rotate(" + frame.rotation + "deg)"
+
+    element.style.transform = (originalTransform + frameTransform).trim()
+  }
+
+  function __applyFrameToImageElements() {
+    var images = Array.prototype.slice.call(document.querySelectorAll("img"))
+
+    images.forEach(function (image) {
+      var assetConfig = __getAssetConfigForMediaElement(image)
+
+      if (!assetConfig) return
+
+      __applyFrameToMediaElement(image, assetConfig)
+    })
+  }
+
+  function __applyFrameToVideoElements() {
+    var videos = Array.prototype.slice.call(document.querySelectorAll("video"))
+
+    videos.forEach(function (video) {
+      var assetConfig = __getAssetConfigForMediaElement(video)
+
+      if (!assetConfig) return
+
+      __applyFrameToMediaElement(video, assetConfig)
+    })
+  }
+
+  function __backgroundIncludesAsset(backgroundImage, assetUrl) {
+    if (!backgroundImage || !assetUrl) return false
+
+    if (backgroundImage.indexOf(assetUrl) >= 0) return true
+
+    try {
+      var decodedAssetUrl = decodeURIComponent(assetUrl)
+
+      if (backgroundImage.indexOf(decodedAssetUrl) >= 0) return true
+    } catch (error) {}
+
+    try {
+      var encodedAssetUrl = encodeURI(assetUrl)
+
+      if (backgroundImage.indexOf(encodedAssetUrl) >= 0) return true
+    } catch (error) {}
+
+    return false
+  }
+
+  function __applyFrameToBackgroundElements() {
+    var config = window.__REMOTION_ASSET_CONFIG__ || {}
+    var configEntries = Object.entries(config)
+
+    if (configEntries.length === 0) return
+
+    var elements = Array.prototype.slice.call(document.querySelectorAll("*"))
+
+    elements.forEach(function (element) {
+      var computedStyle = window.getComputedStyle(element)
+      var backgroundImage = computedStyle.backgroundImage
+
+      if (!backgroundImage || backgroundImage === "none") return
+
+      for (var i = 0; i < configEntries.length; i++) {
+        var assetUrl = configEntries[i][0]
+        var assetConfig = configEntries[i][1]
+
+        if (!assetConfig || !assetConfig.frame) continue
+
+        if (!__backgroundIncludesAsset(backgroundImage, assetUrl)) continue
+
+        var frame = __normalizeFrameConfig(assetConfig.frame)
+
+        element.style.backgroundSize = __getBackgroundSizeValue(frame.fit)
+        element.style.backgroundPosition =
+          frame.positionX + "% " + frame.positionY + "%"
+        element.style.backgroundRepeat = "no-repeat"
+
+        break
+      }
+    })
+  }
+
+  function __applyAssetFrames() {
+    __applyFrameToImageElements()
+    __applyFrameToVideoElements()
+    __applyFrameToBackgroundElements()
   }
 
   function __getVideoMode(video) {
@@ -310,120 +473,110 @@ const frameBridgeScript = `
     return Math.max(0, Math.min(video.duration - 0.05, frameSecond))
   }
 
- async function __playVideoNaturally(video, data) {
-  if (!video) return
+  async function __playVideoNaturally(video, data) {
+    if (!video) return
 
-  var mode = __getVideoMode(video)
+    var mode = __getVideoMode(video)
 
-  try {
+    try {
+      await __waitWithTimeout(__waitForVideoMetadata(video), 1600)
+
+      video.muted = true
+      video.playsInline = true
+      video.preload = "auto"
+
+      video.playbackRate = 1
+      video.loop = mode === "loop"
+
+      if (video.paused) {
+        var playResult = video.play()
+
+        if (playResult && typeof playResult.then === "function") {
+          await playResult.catch(function () {})
+        }
+      }
+    } catch (error) {
+      // Natural preview is best-effort.
+    }
+  }
+
+  async function __syncVideoToFrame(video, data) {
+    if (!video) return
+
+    if (video.hasAttribute("data-remotion-ignore-video-sync")) {
+      return
+    }
+
+    var mode = __getVideoMode(video)
+
+    if (!data.isRendering) {
+      await __playVideoNaturally(video, data)
+      return
+    }
+
+    if (mode === "natural") {
+      await __playVideoNaturally(video, data)
+      return
+    }
+
     await __waitWithTimeout(__waitForVideoMetadata(video), 1600)
 
-    video.muted = true
-    video.playsInline = true
-    video.preload = "auto"
+    var targetTime = __getVideoTargetTime(video, data)
 
-    // Preview phải luôn là tốc độ thật.
-    // Không stretch, không tua nhanh, không ép playbackRate.
-    video.playbackRate = 1
+    if (targetTime === null) return
 
-    // Chỉ mode loop mới loop trong preview.
-    video.loop = mode === "loop"
+    try {
+      video.pause()
+      video.muted = true
+      video.playsInline = true
+      video.preload = "auto"
+      video.playbackRate = 1
 
-    if (video.paused) {
-      var playResult = video.play()
+      if (Math.abs(video.currentTime - targetTime) > 0.033) {
+        var seekPromise = new Promise(function (resolve) {
+          var done = false
 
-      if (playResult && typeof playResult.then === "function") {
-        await playResult.catch(function () {})
-      }
-    }
-  } catch (error) {
-    // Natural preview is best-effort.
-  }
-}
+          function finish() {
+            if (done) return
+            done = true
 
- async function __syncVideoToFrame(video, data) {
-  if (!video) return
+            video.removeEventListener("seeked", finish)
+            video.removeEventListener("canplay", finish)
+            video.removeEventListener("loadeddata", finish)
+            video.removeEventListener("error", finish)
 
-  if (video.hasAttribute("data-remotion-ignore-video-sync")) {
-    return
-  }
-
-  var mode = __getVideoMode(video)
-
-  // Quan trọng:
-  // Khi đang preview trong Studio thì video luôn chạy tự nhiên.
-  // Không seek, không stretch, không đổi playbackRate.
-  if (!data.isRendering) {
-    await __playVideoNaturally(video, data)
-    return
-  }
-
-  // Khi render thật:
-  // natural vẫn để tự nhiên.
-  // timeline / loop / stretch mới sync theo frame.
-  if (mode === "natural") {
-    await __playVideoNaturally(video, data)
-    return
-  }
-
-  await __waitWithTimeout(__waitForVideoMetadata(video), 1600)
-
-  var targetTime = __getVideoTargetTime(video, data)
-
-  if (targetTime === null) return
-
-  try {
-    video.pause()
-    video.muted = true
-    video.playsInline = true
-    video.preload = "auto"
-    video.playbackRate = 1
-
-    if (Math.abs(video.currentTime - targetTime) > 0.033) {
-      var seekPromise = new Promise(function (resolve) {
-        var done = false
-
-        function finish() {
-          if (done) return
-          done = true
-
-          video.removeEventListener("seeked", finish)
-          video.removeEventListener("canplay", finish)
-          video.removeEventListener("loadeddata", finish)
-          video.removeEventListener("error", finish)
-
-          resolve()
-        }
-
-        video.addEventListener("seeked", finish)
-        video.addEventListener("canplay", finish)
-        video.addEventListener("loadeddata", finish)
-        video.addEventListener("error", finish)
-
-        video.currentTime = targetTime
-
-        setTimeout(finish, 1800)
-      })
-
-      await __waitWithTimeout(seekPromise, 1900)
-    }
-
-    if (typeof video.requestVideoFrameCallback === "function") {
-      await __waitWithTimeout(
-        new Promise(function (resolve) {
-          video.requestVideoFrameCallback(function () {
             resolve()
-          })
-        }),
-        500
-      )
-    } else {
-      await __sleep(30)
+          }
+
+          video.addEventListener("seeked", finish)
+          video.addEventListener("canplay", finish)
+          video.addEventListener("loadeddata", finish)
+          video.addEventListener("error", finish)
+
+          video.currentTime = targetTime
+
+          setTimeout(finish, 1800)
+        })
+
+        await __waitWithTimeout(seekPromise, 1900)
+      }
+
+      if (typeof video.requestVideoFrameCallback === "function") {
+        await __waitWithTimeout(
+          new Promise(function (resolve) {
+            video.requestVideoFrameCallback(function () {
+              resolve()
+            })
+          }),
+          500
+        )
+      } else {
+        await __sleep(30)
+      }
+    } catch (error) {
+      // Không để một video lỗi làm chết cả render.
     }
-  } catch (error) {
-    // Không để một video lỗi làm chết cả render.
   }
-}
 
   async function __syncVideosToFrame(data) {
     var videos = Array.prototype.slice.call(document.querySelectorAll("video"))
@@ -467,6 +620,8 @@ const frameBridgeScript = `
         }
       }
 
+      __applyAssetFrames()
+
       await __waitForFrameReady(data)
 
       window.parent.postMessage(
@@ -491,27 +646,27 @@ const frameBridgeScript = `
     }
   })
 </script>
-`;
+`
 
 async function ensureStorage() {
-  await mkdir(htmlCodeRendererDir, { recursive: true });
-  await mkdir(activeAssetsDir, { recursive: true });
-  await mkdir(unusedAssetsDir, { recursive: true });
+  await mkdir(htmlCodeRendererDir, { recursive: true })
+  await mkdir(activeAssetsDir, { recursive: true })
+  await mkdir(unusedAssetsDir, { recursive: true })
 
   try {
-    await stat(currentAssetMapFile);
+    await stat(currentAssetMapFile)
   } catch {
     await writeFile(
       currentAssetMapFile,
       JSON.stringify({ assets: {} }, null, 2),
       "utf8",
-    );
+    )
   }
 
   try {
-    await stat(currentCodeFile);
+    await stat(currentCodeFile)
   } catch {
-    await writeFile(currentCodeFile, defaultCode, "utf8");
+    await writeFile(currentCodeFile, defaultCode, "utf8")
   }
 }
 
@@ -522,101 +677,134 @@ function injectFrameBridge(html) {
     html.includes("__REMOTION_FRAME_BRIDGE_V4__") ||
     html.includes("__REMOTION_FRAME_BRIDGE_V5__")
   ) {
-    return html;
+    return html
   }
 
   if (html.includes("</body>")) {
-    return html.replace("</body>", `${frameBridgeScript}</body>`);
+    return html.replace("</body>", `${frameBridgeScript}</body>`)
   }
 
-  return `${html}${frameBridgeScript}`;
+  return `${html}${frameBridgeScript}`
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numberValue = Number(value)
+
+  if (!Number.isFinite(numberValue)) {
+    return fallback
+  }
+
+  return Math.max(min, Math.min(max, numberValue))
+}
+
+function normalizeAssetFrame(frame) {
+  const safeFrame = frame && typeof frame === "object" ? frame : {}
+
+  const fit = allowedFrameFits.includes(safeFrame.fit)
+    ? safeFrame.fit
+    : "cover"
+
+  return {
+    fit,
+    positionX: clampNumber(safeFrame.positionX, 0, 100, 50),
+    positionY: clampNumber(safeFrame.positionY, 0, 100, 50),
+    scale: clampNumber(safeFrame.scale, 0.25, 4, 1),
+    rotation: clampNumber(safeFrame.rotation, -180, 180, 0),
+  }
 }
 
 function createAssetConfigScript(assetMap) {
-  const config = {};
-  const assets = assetMap.assets || {};
+  const config = {}
+  const assets = assetMap.assets || {}
 
   for (const [originalValue, assetData] of Object.entries(assets)) {
-    if (!assetData || !assetData.replacementUrl) continue;
+    if (!assetData || !assetData.replacementUrl) continue
 
     const assetType =
       assetData.assetType ||
       (assetData.mimeType && assetData.mimeType.startsWith("video/")
         ? "video"
-        : getAssetType(assetData.fileName || originalValue));
+        : assetData.mimeType && assetData.mimeType.startsWith("image/")
+          ? "image"
+          : getAssetType(assetData.fileName || originalValue))
 
-    if (assetType !== "video") continue;
+    if (assetType !== "image" && assetType !== "video") continue
 
     config[assetData.replacementUrl] = {
       originalValue,
       fileName: assetData.fileName || "",
-      assetType: "video",
-      videoMode: assetData.videoMode || "natural",
-    };
+      assetType,
+      frame: normalizeAssetFrame(assetData.frame),
+      ...(assetType === "video"
+        ? {
+            videoMode: assetData.videoMode || "natural",
+          }
+        : {}),
+    }
   }
 
-  const safeJson = JSON.stringify(config).replace(/</g, "\\u003c");
+  const safeJson = JSON.stringify(config).replace(/</g, "\\u003c")
 
-  return `<script>window.__REMOTION_ASSET_CONFIG__ = ${safeJson};</script>`;
+  return `<script>window.__REMOTION_ASSET_CONFIG__ = ${safeJson};</script>`
 }
 
 function injectAssetConfig(html, assetMap) {
-  const assetConfigScript = createAssetConfigScript(assetMap);
+  const assetConfigScript = createAssetConfigScript(assetMap)
 
   if (html.includes("__REMOTION_ASSET_CONFIG__")) {
-    return html;
+    return html
   }
 
   if (html.includes("</body>")) {
-    return html.replace("</body>", `${assetConfigScript}</body>`);
+    return html.replace("</body>", `${assetConfigScript}</body>`)
   }
 
-  return `${html}${assetConfigScript}`;
+  return `${html}${assetConfigScript}`
 }
 
 function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173")
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
 }
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json",
-  });
+  })
 
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(data))
 }
 
 function sendError(res, statusCode, error) {
   sendJson(res, statusCode, {
     ok: false,
     error: error instanceof Error ? error.message : String(error),
-  });
+  })
 }
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let body = "";
+    let body = ""
 
     req.on("data", (chunk) => {
-      body += chunk;
-    });
+      body += chunk
+    })
 
     req.on("end", () => {
       try {
-        resolve(body ? JSON.parse(body) : {});
+        resolve(body ? JSON.parse(body) : {})
       } catch (error) {
-        reject(error);
+        reject(error)
       }
-    });
+    })
 
-    req.on("error", reject);
-  });
+    req.on("error", reject)
+  })
 }
 
 function getMimeType(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = path.extname(filePath).toLowerCase()
 
   const mimeMap = {
     ".jpg": "image/jpeg",
@@ -641,81 +829,85 @@ function getMimeType(filePath) {
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".json": "application/json",
-  };
+  }
 
-  return mimeMap[ext] || "application/octet-stream";
+  return mimeMap[ext] || "application/octet-stream"
 }
 
 function hasAssetExtension(value) {
-  const cleanValue = value.split("?")[0].split("#")[0].toLowerCase();
+  const cleanValue = value.split("?")[0].split("#")[0].toLowerCase()
 
-  return assetExtensions.some((extension) => cleanValue.endsWith(extension));
+  return assetExtensions.some((extension) => cleanValue.endsWith(extension))
 }
 
 function getAssetType(value) {
-  const cleanValue = value.split("?")[0].split("#")[0].toLowerCase();
+  const cleanValue = value.split("?")[0].split("#")[0].toLowerCase()
 
   if (
     [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".avif"].some((ext) =>
       cleanValue.endsWith(ext),
     )
   ) {
-    return "image";
+    return "image"
   }
 
   if ([".mp4", ".webm", ".mov"].some((ext) => cleanValue.endsWith(ext))) {
-    return "video";
+    return "video"
   }
 
   if (
-    [".mp3", ".wav", ".ogg", ".aac"].some((ext) => cleanValue.endsWith(ext))
+    [".mp3", ".wav", ".ogg", ".aac"].some((ext) =>
+      cleanValue.endsWith(ext),
+    )
   ) {
-    return "audio";
+    return "audio"
   }
 
   if (
-    [".woff", ".woff2", ".ttf", ".otf"].some((ext) => cleanValue.endsWith(ext))
+    [".woff", ".woff2", ".ttf", ".otf"].some((ext) =>
+      cleanValue.endsWith(ext),
+    )
   ) {
-    return "font";
+    return "font"
   }
 
-  return "unknown";
+  return "unknown"
 }
 
 function getSourceType(value) {
-  if (value.startsWith("{{asset:")) return "slot";
-  if (value.startsWith("data:")) return "base64";
+  if (value.startsWith("{{asset:")) return "slot"
+  if (value.startsWith("data:")) return "base64"
   if (value.startsWith("http://") || value.startsWith("https://")) {
-    return "external";
+    return "external"
   }
-  if (value.startsWith("//")) return "external";
-  if (value.startsWith("#")) return "internal";
+  if (value.startsWith("//")) return "external"
+  if (value.startsWith("#")) return "internal"
 
-  return "local";
+  return "local"
 }
 
 function shouldIgnoreAsset(value) {
-  if (!value) return true;
+  if (!value) return true
 
-  const trimmed = value.trim();
+  const trimmed = value.trim()
 
-  if (!trimmed) return true;
-  if (trimmed.startsWith("#")) return true;
-  if (trimmed.startsWith("mailto:")) return true;
-  if (trimmed.startsWith("tel:")) return true;
-  if (trimmed.startsWith("javascript:")) return true;
-  if (trimmed.startsWith("blob:")) return true;
+  if (!trimmed) return true
+  if (trimmed.startsWith("#")) return true
+  if (trimmed.startsWith("mailto:")) return true
+  if (trimmed.startsWith("tel:")) return true
+  if (trimmed.startsWith("javascript:")) return true
+  if (trimmed.startsWith("blob:")) return true
 
-  return false;
+  return false
 }
 
 function normalizeAssetValue(value) {
-  return value.trim().replace(/^['"]|['"]$/g, "");
+  return value.trim().replace(/^['"]|['"]$/g, "")
 }
 
 function createAssetRecord(value, detectionSource) {
-  const normalizedValue = normalizeAssetValue(value);
-  const sourceType = getSourceType(normalizedValue);
+  const normalizedValue = normalizeAssetValue(value)
+  const sourceType = getSourceType(normalizedValue)
 
   return {
     id: Buffer.from(normalizedValue).toString("base64url"),
@@ -724,148 +916,149 @@ function createAssetRecord(value, detectionSource) {
     sourceType,
     assetType: sourceType === "slot" ? "slot" : getAssetType(normalizedValue),
     replaceable: sourceType !== "base64" && sourceType !== "internal",
-  };
+  }
 }
 
 function addAsset(assetMap, value, detectionSource) {
-  const normalizedValue = normalizeAssetValue(value);
+  const normalizedValue = normalizeAssetValue(value)
 
-  if (shouldIgnoreAsset(normalizedValue)) return;
+  if (shouldIgnoreAsset(normalizedValue)) return
 
-  const sourceType = getSourceType(normalizedValue);
+  const sourceType = getSourceType(normalizedValue)
 
   if (
     sourceType !== "slot" &&
     sourceType !== "base64" &&
     !hasAssetExtension(normalizedValue)
   ) {
-    return;
+    return
   }
 
   if (!assetMap.has(normalizedValue)) {
     assetMap.set(
       normalizedValue,
       createAssetRecord(normalizedValue, detectionSource),
-    );
+    )
   }
 }
 
 function scanSrcset(assetMap, srcsetValue) {
-  const parts = srcsetValue.split(",");
+  const parts = srcsetValue.split(",")
 
   for (const part of parts) {
-    const candidate = part.trim().split(/\s+/)[0];
+    const candidate = part.trim().split(/\s+/)[0]
 
-    addAsset(assetMap, candidate, "srcset");
+    addAsset(assetMap, candidate, "srcset")
   }
 }
 
 function scanAssetsFromCode(code) {
-  const assetMap = new Map();
+  const assetMap = new Map()
 
-  const slotRegex = /\{\{asset:([a-zA-Z0-9_-]+)\}\}/g;
+  const slotRegex = /\{\{asset:([a-zA-Z0-9_-]+)\}\}/g
 
   for (const match of code.matchAll(slotRegex)) {
-    addAsset(assetMap, `{{asset:${match[1]}}}`, "asset-slot");
+    addAsset(assetMap, `{{asset:${match[1]}}}`, "asset-slot")
   }
 
-  const htmlAssetRegex = /\b(src|href|poster)\s*=\s*["']([^"']+)["']/gi;
+  const htmlAssetRegex =
+    /\b(src|href|poster)\s*=\s*["']([^"']+)["']/gi
 
   for (const match of code.matchAll(htmlAssetRegex)) {
-    addAsset(assetMap, match[2], `html-${match[1].toLowerCase()}`);
+    addAsset(assetMap, match[2], `html-${match[1].toLowerCase()}`)
   }
 
-  const srcsetRegex = /\bsrcset\s*=\s*["']([^"']+)["']/gi;
+  const srcsetRegex = /\bsrcset\s*=\s*["']([^"']+)["']/gi
 
   for (const match of code.matchAll(srcsetRegex)) {
-    scanSrcset(assetMap, match[1]);
+    scanSrcset(assetMap, match[1])
   }
 
-  const cssUrlRegex = /url\(\s*(['"]?)(.*?)\1\s*\)/gi;
+  const cssUrlRegex = /url\(\s*(['"]?)(.*?)\1\s*\)/gi
 
   for (const match of code.matchAll(cssUrlRegex)) {
-    addAsset(assetMap, match[2], "css-url");
+    addAsset(assetMap, match[2], "css-url")
   }
 
   const jsStringAssetRegex =
-    /["'`]([^"'`]+\.(jpg|jpeg|png|webp|gif|svg|avif|mp4|webm|mov|mp3|wav|ogg|aac|woff|woff2|ttf|otf)(\?[^"'`]*)?(#[^"'`]*)?)["'`]/gi;
+    /["'`]([^"'`]+\.(jpg|jpeg|png|webp|gif|svg|avif|mp4|webm|mov|mp3|wav|ogg|aac|woff|woff2|ttf|otf)(\?[^"'`]*)?(#[^"'`]*)?)["'`]/gi
 
   for (const match of code.matchAll(jsStringAssetRegex)) {
-    addAsset(assetMap, match[1], "js-string");
+    addAsset(assetMap, match[1], "js-string")
   }
 
-  return Array.from(assetMap.values());
+  return Array.from(assetMap.values())
 }
 
 function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function rewriteCodeWithAssetMap(code, assetMap) {
-  let output = code;
-  const assets = assetMap.assets || {};
+  let output = code
+  const assets = assetMap.assets || {}
 
   for (const [originalValue, assetData] of Object.entries(assets)) {
-    if (!assetData || !assetData.replacementUrl) continue;
+    if (!assetData || !assetData.replacementUrl) continue
 
     output = output.replace(
       new RegExp(escapeRegExp(originalValue), "g"),
       assetData.replacementUrl,
-    );
+    )
   }
 
-  return output;
+  return output
 }
 
 function sanitizeFileName(fileName) {
-  const ext = path.extname(fileName).toLowerCase();
+  const ext = path.extname(fileName).toLowerCase()
   const base = path
     .basename(fileName, ext)
     .replace(/[^a-zA-Z0-9_-]/g, "-")
     .replace(/-+/g, "-")
-    .slice(0, 80);
+    .slice(0, 80)
 
-  const safeBase = base || "asset";
-  const safeExt = ext || ".bin";
+  const safeBase = base || "asset"
+  const safeExt = ext || ".bin"
 
-  return `${safeBase}${safeExt}`;
+  return `${safeBase}${safeExt}`
 }
 
 function parseDataUrl(dataUrl) {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
 
   if (!match) {
-    throw new Error("Invalid data URL");
+    throw new Error("Invalid data URL")
   }
 
-  const mimeType = match[1];
-  const buffer = Buffer.from(match[2], "base64");
+  const mimeType = match[1]
+  const buffer = Buffer.from(match[2], "base64")
 
   return {
     mimeType,
     buffer,
-  };
+  }
 }
 
 async function deleteFileIfExists(filePath) {
   try {
     await rm(filePath, {
       force: true,
-    });
+    })
   } catch {
     // ignore
   }
 }
 
 async function deleteStoredAssetFile(storedFileName) {
-  if (!storedFileName || typeof storedFileName !== "string") return;
+  if (!storedFileName || typeof storedFileName !== "string") return
 
-  const safeStoredFileName = path.basename(storedFileName);
-  const filePath = path.join(activeAssetsDir, safeStoredFileName);
+  const safeStoredFileName = path.basename(storedFileName)
+  const filePath = path.join(activeAssetsDir, safeStoredFileName)
 
-  if (!filePath.startsWith(activeAssetsDir)) return;
+  if (!filePath.startsWith(activeAssetsDir)) return
 
-  await deleteFileIfExists(filePath);
+  await deleteFileIfExists(filePath)
 }
 
 async function cleanupOrphanActiveAssets(assetMap) {
@@ -873,128 +1066,125 @@ async function cleanupOrphanActiveAssets(assetMap) {
     Object.values(assetMap.assets || {})
       .map((assetData) => assetData?.storedFileName)
       .filter(Boolean),
-  );
+  )
 
   try {
-    const files = await readdir(activeAssetsDir);
+    const files = await readdir(activeAssetsDir)
 
     await Promise.all(
       files.map(async (fileName) => {
-        if (fileName === ".gitkeep") return;
-        if (usedFiles.has(fileName)) return;
+        if (fileName === ".gitkeep") return
+        if (usedFiles.has(fileName)) return
 
-        await deleteFileIfExists(path.join(activeAssetsDir, fileName));
+        await deleteFileIfExists(path.join(activeAssetsDir, fileName))
       }),
-    );
+    )
   } catch {
     // ignore
   }
 }
 
 async function cleanupUnusedAssetsForCode(code, assetMap) {
-  const detectedAssets = scanAssetsFromCode(code);
+  const detectedAssets = scanAssetsFromCode(code)
   const activeOriginalValues = new Set(
     detectedAssets.map((asset) => asset.value),
-  );
+  )
 
   const nextAssetMap = {
     assets: {
       ...(assetMap.assets || {}),
     },
-  };
+  }
 
   for (const [originalValue, assetData] of Object.entries(
     assetMap.assets || {},
   )) {
-    if (activeOriginalValues.has(originalValue)) continue;
+    if (activeOriginalValues.has(originalValue)) continue
 
-    await deleteStoredAssetFile(assetData?.storedFileName);
-    delete nextAssetMap.assets[originalValue];
+    await deleteStoredAssetFile(assetData?.storedFileName)
+    delete nextAssetMap.assets[originalValue]
   }
 
-  await cleanupOrphanActiveAssets(nextAssetMap);
+  await cleanupOrphanActiveAssets(nextAssetMap)
 
-  return nextAssetMap;
+  return nextAssetMap
 }
 
 async function getCurrentScreen() {
-  const fileContent = await readFile(currentScreenFile, "utf8");
+  const fileContent = await readFile(currentScreenFile, "utf8")
   const match = fileContent.match(
     /currentScreenPresetId:\s*ScreenPresetId\s*=\s*"(.+?)"/,
-  );
+  )
 
-  return match?.[1] || "16x9";
+  return match?.[1] || "16x9"
 }
 
 async function setCurrentScreen(screenPreset) {
   if (!allowedScreens.includes(screenPreset)) {
-    throw new Error(`Invalid screen preset: ${screenPreset}`);
+    throw new Error(`Invalid screen preset: ${screenPreset}`)
   }
 
   const content = `import type { ScreenPresetId } from "./screen-presets"
 
 export const currentScreenPresetId: ScreenPresetId = "${screenPreset}"
-`;
+`
 
-  await writeFile(currentScreenFile, content, "utf8");
+  await writeFile(currentScreenFile, content, "utf8")
 }
 
 async function getCurrentDuration() {
-  const fileContent = await readFile(currentDurationFile, "utf8");
-  const match = fileContent.match(/currentDurationSeconds\s*=\s*(\d+)/);
+  const fileContent = await readFile(currentDurationFile, "utf8")
+  const match = fileContent.match(/currentDurationSeconds\s*=\s*(\d+)/)
 
-  return Number(match?.[1] || 8);
+  return Number(match?.[1] || 8)
 }
 
 async function setCurrentDuration(seconds) {
-  const durationSeconds = Number(seconds);
+  const durationSeconds = Number(seconds)
 
   if (!Number.isFinite(durationSeconds)) {
-    throw new Error("Duration must be a valid number");
+    throw new Error("Duration must be a valid number")
   }
 
   if (durationSeconds < 1 || durationSeconds > 120) {
-    throw new Error("Duration must be between 1 and 120 seconds");
+    throw new Error("Duration must be between 1 and 120 seconds")
   }
 
   const content = `export const currentDurationSeconds = ${Math.round(
     durationSeconds,
   )}
-`;
+`
 
-  await writeFile(currentDurationFile, content, "utf8");
+  await writeFile(currentDurationFile, content, "utf8")
 }
 
 async function getCurrentCode() {
-  return readFile(currentCodeFile, "utf8");
+  return readFile(currentCodeFile, "utf8")
 }
 
 async function setCurrentCode(code) {
   if (typeof code !== "string") {
-    throw new Error("Code must be a string");
+    throw new Error("Code must be a string")
   }
 
-  await writeFile(currentCodeFile, code, "utf8");
+  await writeFile(currentCodeFile, code, "utf8")
 
-  const currentAssetMap = await getCurrentAssetMap();
-  const cleanedAssetMap = await cleanupUnusedAssetsForCode(
-    code,
-    currentAssetMap,
-  );
+  const currentAssetMap = await getCurrentAssetMap()
+  const cleanedAssetMap = await cleanupUnusedAssetsForCode(code, currentAssetMap)
 
-  await setCurrentAssetMap(cleanedAssetMap);
+  await setCurrentAssetMap(cleanedAssetMap)
 
-  return cleanedAssetMap;
+  return cleanedAssetMap
 }
 
 async function getCurrentAssetMap() {
   try {
-    const fileContent = await readFile(currentAssetMapFile, "utf8");
-    return JSON.parse(fileContent);
+    const fileContent = await readFile(currentAssetMapFile, "utf8")
+    return JSON.parse(fileContent)
   } catch {
     return {
       assets: {},
-    };
+    }
   }
 }
 
@@ -1002,31 +1192,27 @@ async function setCurrentAssetMap(assetMap) {
   const safeMap =
     assetMap && typeof assetMap === "object" && assetMap.assets
       ? assetMap
-      : { assets: {} };
+      : { assets: {} }
 
-  await writeFile(
-    currentAssetMapFile,
-    JSON.stringify(safeMap, null, 2),
-    "utf8",
-  );
+  await writeFile(currentAssetMapFile, JSON.stringify(safeMap, null, 2), "utf8")
 }
 
 async function updateAssetConfig({ originalValue, videoMode }) {
   if (!originalValue || typeof originalValue !== "string") {
-    throw new Error("originalValue is required");
+    throw new Error("originalValue is required")
   }
 
-  const assetMap = await getCurrentAssetMap();
-  const currentAsset = assetMap.assets?.[originalValue];
+  const assetMap = await getCurrentAssetMap()
+  const currentAsset = assetMap.assets?.[originalValue]
 
   if (!currentAsset) {
-    throw new Error("Asset not found in asset map");
+    throw new Error("Asset not found in asset map")
   }
 
-  const nextVideoMode = videoMode || currentAsset.videoMode || "natural";
+  const nextVideoMode = videoMode || currentAsset.videoMode || "natural"
 
   if (!allowedVideoModes.includes(nextVideoMode)) {
-    throw new Error(`Invalid video mode: ${nextVideoMode}`);
+    throw new Error(`Invalid video mode: ${nextVideoMode}`)
   }
 
   assetMap.assets = {
@@ -1036,54 +1222,85 @@ async function updateAssetConfig({ originalValue, videoMode }) {
       videoMode: nextVideoMode,
       updatedAt: new Date().toISOString(),
     },
-  };
+  }
 
-  await setCurrentAssetMap(assetMap);
+  await setCurrentAssetMap(assetMap)
 
   return {
     assetMap,
     updatedAsset: assetMap.assets[originalValue],
-  };
+  }
+}
+
+async function updateAssetFrame({ originalValue, frame }) {
+  if (!originalValue || typeof originalValue !== "string") {
+    throw new Error("originalValue is required")
+  }
+
+  const assetMap = await getCurrentAssetMap()
+  const currentAsset = assetMap.assets?.[originalValue]
+
+  if (!currentAsset) {
+    throw new Error("Asset not found in asset map")
+  }
+
+  const normalizedFrame = normalizeAssetFrame(frame)
+
+  assetMap.assets = {
+    ...(assetMap.assets || {}),
+    [originalValue]: {
+      ...currentAsset,
+      frame: normalizedFrame,
+      updatedAt: new Date().toISOString(),
+    },
+  }
+
+  await setCurrentAssetMap(assetMap)
+
+  return {
+    assetMap,
+    updatedAsset: assetMap.assets[originalValue],
+  }
 }
 
 async function uploadAssetReplacement({ originalValue, fileName, dataUrl }) {
   if (!originalValue || typeof originalValue !== "string") {
-    throw new Error("originalValue is required");
+    throw new Error("originalValue is required")
   }
 
   if (!fileName || typeof fileName !== "string") {
-    throw new Error("fileName is required");
+    throw new Error("fileName is required")
   }
 
   if (!dataUrl || typeof dataUrl !== "string") {
-    throw new Error("dataUrl is required");
+    throw new Error("dataUrl is required")
   }
 
-  const { mimeType, buffer } = parseDataUrl(dataUrl);
+  const { mimeType, buffer } = parseDataUrl(dataUrl)
 
   if (buffer.byteLength > 50 * 1024 * 1024) {
-    throw new Error("File is too large. Max size is 50MB");
+    throw new Error("File is too large. Max size is 50MB")
   }
 
-  await mkdir(activeAssetsDir, { recursive: true });
+  await mkdir(activeAssetsDir, { recursive: true })
 
-  const assetMap = await getCurrentAssetMap();
-  const previousAsset = assetMap.assets?.[originalValue];
+  const assetMap = await getCurrentAssetMap()
+  const previousAsset = assetMap.assets?.[originalValue]
 
   if (previousAsset?.storedFileName) {
-    await deleteStoredAssetFile(previousAsset.storedFileName);
+    await deleteStoredAssetFile(previousAsset.storedFileName)
   }
 
-  const safeFileName = sanitizeFileName(fileName);
-  const assetId = Buffer.from(originalValue).toString("base64url");
-  const storedFileName = `${assetId}-${Date.now()}-${safeFileName}`;
-  const outputPath = path.join(activeAssetsDir, storedFileName);
+  const safeFileName = sanitizeFileName(fileName)
+  const assetId = Buffer.from(originalValue).toString("base64url")
+  const storedFileName = `${assetId}-${Date.now()}-${safeFileName}`
+  const outputPath = path.join(activeAssetsDir, storedFileName)
 
-  await writeFile(outputPath, buffer);
+  await writeFile(outputPath, buffer)
 
   const replacementUrl = `http://localhost:${PORT}/assets/active/${encodeURIComponent(
     storedFileName,
-  )}`;
+  )}`
 
   const assetType = mimeType.startsWith("video/")
     ? "video"
@@ -1091,11 +1308,13 @@ async function uploadAssetReplacement({ originalValue, fileName, dataUrl }) {
       ? "image"
       : mimeType.startsWith("audio/")
         ? "audio"
-        : getAssetType(fileName || originalValue);
+        : getAssetType(fileName || originalValue)
 
-  const previousVideoMode = previousAsset?.videoMode;
+  const previousVideoMode = previousAsset?.videoMode
+  const previousFrame = previousAsset?.frame
+
   const videoMode =
-    assetType === "video" ? previousVideoMode || "natural" : undefined;
+    assetType === "video" ? previousVideoMode || "natural" : undefined
 
   assetMap.assets = {
     ...(assetMap.assets || {}),
@@ -1108,58 +1327,57 @@ async function uploadAssetReplacement({ originalValue, fileName, dataUrl }) {
       assetType,
       sizeBytes: buffer.byteLength,
       uploadedAt: new Date().toISOString(),
+      frame: normalizeAssetFrame(previousFrame),
       ...(videoMode ? { videoMode } : {}),
     },
-  };
+  }
 
-  await setCurrentAssetMap(assetMap);
-  await cleanupOrphanActiveAssets(assetMap);
+  await setCurrentAssetMap(assetMap)
+  await cleanupOrphanActiveAssets(assetMap)
 
   return {
     assetMap,
     uploadedAsset: assetMap.assets[originalValue],
-  };
+  }
 }
 
 async function serveActiveAsset(req, res) {
   const rawAssetPath = decodeURIComponent(
     req.url.replace("/assets/active/", ""),
-  );
+  )
 
-  const safeAssetPath = path
-    .normalize(rawAssetPath)
-    .replace(/^(\.\.[/\\])+/, "");
-  const filePath = path.join(activeAssetsDir, safeAssetPath);
+  const safeAssetPath = path.normalize(rawAssetPath).replace(/^(\.\.[/\\])+/, "")
+  const filePath = path.join(activeAssetsDir, safeAssetPath)
 
   if (!filePath.startsWith(activeAssetsDir)) {
-    sendError(res, 403, "Invalid asset path");
-    return;
+    sendError(res, 403, "Invalid asset path")
+    return
   }
 
   try {
-    const fileStat = await stat(filePath);
-    const fileSize = fileStat.size;
-    const mimeType = getMimeType(filePath);
-    const range = req.headers.range;
+    const fileStat = await stat(filePath)
+    const fileSize = fileStat.size
+    const mimeType = getMimeType(filePath)
+    const range = req.headers.range
 
     if (range) {
-      const match = range.match(/bytes=(\d*)-(\d*)/);
+      const match = range.match(/bytes=(\d*)-(\d*)/)
 
       if (!match) {
         res.writeHead(416, {
           "Content-Range": `bytes */${fileSize}`,
-        });
-        res.end();
-        return;
+        })
+        res.end()
+        return
       }
 
-      let start = match[1] ? Number.parseInt(match[1], 10) : 0;
-      let end = match[2] ? Number.parseInt(match[2], 10) : fileSize - 1;
+      let start = match[1] ? Number.parseInt(match[1], 10) : 0
+      let end = match[2] ? Number.parseInt(match[2], 10) : fileSize - 1
 
       if (!match[1] && match[2]) {
-        const suffixLength = Number.parseInt(match[2], 10);
-        start = Math.max(fileSize - suffixLength, 0);
-        end = fileSize - 1;
+        const suffixLength = Number.parseInt(match[2], 10)
+        start = Math.max(fileSize - suffixLength, 0)
+        end = fileSize - 1
       }
 
       if (
@@ -1171,14 +1389,14 @@ async function serveActiveAsset(req, res) {
       ) {
         res.writeHead(416, {
           "Content-Range": `bytes */${fileSize}`,
-        });
-        res.end();
-        return;
+        })
+        res.end()
+        return
       }
 
-      end = Math.min(end, fileSize - 1);
+      end = Math.min(end, fileSize - 1)
 
-      const chunkSize = end - start + 1;
+      const chunkSize = end - start + 1
 
       res.writeHead(206, {
         "Content-Range": `bytes ${start}-${end}/${fileSize}`,
@@ -1186,14 +1404,14 @@ async function serveActiveAsset(req, res) {
         "Content-Length": chunkSize,
         "Content-Type": mimeType,
         "Cache-Control": "no-store, no-cache, must-revalidate",
-      });
+      })
 
       createReadStream(filePath, {
         start,
         end,
-      }).pipe(res);
+      }).pipe(res)
 
-      return;
+      return
     }
 
     res.writeHead(200, {
@@ -1201,278 +1419,296 @@ async function serveActiveAsset(req, res) {
       "Content-Length": fileSize,
       "Accept-Ranges": "bytes",
       "Cache-Control": "no-store, no-cache, must-revalidate",
-    });
+    })
 
-    createReadStream(filePath).pipe(res);
+    createReadStream(filePath).pipe(res)
   } catch {
-    sendError(res, 404, "Asset not found");
+    sendError(res, 404, "Asset not found")
   }
 }
 
 const server = http.createServer(async (req, res) => {
-  setCorsHeaders(res);
+  setCorsHeaders(res)
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    res.end();
-    return;
+    res.writeHead(204)
+    res.end()
+    return
   }
 
   if (req.method === "GET" && req.url === "/screen") {
     try {
-      const screenPreset = await getCurrentScreen();
+      const screenPreset = await getCurrentScreen()
 
       sendJson(res, 200, {
         ok: true,
         screenPreset,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/screen") {
     try {
-      const body = await readBody(req);
-      const screenPreset = body.screenPreset || "16x9";
+      const body = await readBody(req)
+      const screenPreset = body.screenPreset || "16x9"
 
-      await setCurrentScreen(screenPreset);
+      await setCurrentScreen(screenPreset)
 
       sendJson(res, 200, {
         ok: true,
         screenPreset,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "GET" && req.url === "/duration") {
     try {
-      const durationSeconds = await getCurrentDuration();
+      const durationSeconds = await getCurrentDuration()
 
       sendJson(res, 200, {
         ok: true,
         durationSeconds,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/duration") {
     try {
-      const body = await readBody(req);
-      const durationSeconds = body.durationSeconds || 8;
+      const body = await readBody(req)
+      const durationSeconds = body.durationSeconds || 8
 
-      await setCurrentDuration(durationSeconds);
+      await setCurrentDuration(durationSeconds)
 
       sendJson(res, 200, {
         ok: true,
         durationSeconds,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "GET" && req.url === "/code") {
     try {
-      const code = await getCurrentCode();
+      const code = await getCurrentCode()
 
       sendJson(res, 200, {
         ok: true,
         code,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/code") {
     try {
-      const body = await readBody(req);
-      const code = body.code || "";
-      const assetMap = await setCurrentCode(code);
+      const body = await readBody(req)
+      const code = body.code || ""
+      const assetMap = await setCurrentCode(code)
 
       sendJson(res, 200, {
         ok: true,
         assetMap,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "GET" && req.url === "/asset-map") {
     try {
-      const assetMap = await getCurrentAssetMap();
+      const assetMap = await getCurrentAssetMap()
 
       sendJson(res, 200, {
         ok: true,
         assetMap,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/asset-map") {
     try {
-      const body = await readBody(req);
-      const assetMap = body.assetMap || { assets: {} };
+      const body = await readBody(req)
+      const assetMap = body.assetMap || { assets: {} }
 
-      await setCurrentAssetMap(assetMap);
-      await cleanupOrphanActiveAssets(assetMap);
+      await setCurrentAssetMap(assetMap)
+      await cleanupOrphanActiveAssets(assetMap)
 
       sendJson(res, 200, {
         ok: true,
         assetMap,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/assets/config") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req)
 
       const result = await updateAssetConfig({
         originalValue: body.originalValue,
         videoMode: body.videoMode,
-      });
+      })
 
       sendJson(res, 200, {
         ok: true,
         ...result,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
+  }
+
+  if (req.method === "POST" && req.url === "/assets/frame") {
+    try {
+      const body = await readBody(req)
+
+      const result = await updateAssetFrame({
+        originalValue: body.originalValue,
+        frame: body.frame,
+      })
+
+      sendJson(res, 200, {
+        ok: true,
+        ...result,
+      })
+    } catch (error) {
+      sendError(res, 500, error)
+    }
+
+    return
   }
 
   if (req.method === "GET" && req.url === "/assets/scan") {
     try {
-      const code = await getCurrentCode();
-      const detectedAssets = scanAssetsFromCode(code);
-      const assetMap = await getCurrentAssetMap();
+      const code = await getCurrentCode()
+      const detectedAssets = scanAssetsFromCode(code)
+      const assetMap = await getCurrentAssetMap()
 
       sendJson(res, 200, {
         ok: true,
         assets: detectedAssets,
         assetMap,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/assets/scan-code") {
     try {
-      const body = await readBody(req);
-      const code = typeof body.code === "string" ? body.code : "";
-      const detectedAssets = scanAssetsFromCode(code);
-      const assetMap = await getCurrentAssetMap();
+      const body = await readBody(req)
+      const code = typeof body.code === "string" ? body.code : ""
+      const detectedAssets = scanAssetsFromCode(code)
+      const assetMap = await getCurrentAssetMap()
 
       sendJson(res, 200, {
         ok: true,
         assets: detectedAssets,
         assetMap,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "POST" && req.url === "/assets/upload") {
     try {
-      const body = await readBody(req);
+      const body = await readBody(req)
 
       const result = await uploadAssetReplacement({
         originalValue: body.originalValue,
         fileName: body.fileName,
         dataUrl: body.dataUrl,
-      });
+      })
 
       sendJson(res, 200, {
         ok: true,
         ...result,
-      });
+      })
     } catch (error) {
-      sendError(res, 500, error);
+      sendError(res, 500, error)
     }
 
-    return;
+    return
   }
 
   if (req.method === "GET" && req.url?.startsWith("/assets/active/")) {
-    await serveActiveAsset(req, res);
-    return;
+    await serveActiveAsset(req, res)
+    return
   }
 
   if (req.method === "GET" && req.url?.startsWith("/code-preview.html")) {
     try {
-      const code = await getCurrentCode();
-      const assetMap = await getCurrentAssetMap();
-      const rewrittenCode = rewriteCodeWithAssetMap(code, assetMap);
-      const htmlWithAssetConfig = injectAssetConfig(rewrittenCode, assetMap);
-      const htmlWithBridge = injectFrameBridge(htmlWithAssetConfig);
+      const code = await getCurrentCode()
+      const assetMap = await getCurrentAssetMap()
+      const rewrittenCode = rewriteCodeWithAssetMap(code, assetMap)
+      const htmlWithAssetConfig = injectAssetConfig(rewrittenCode, assetMap)
+      const htmlWithBridge = injectFrameBridge(htmlWithAssetConfig)
 
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store, no-cache, must-revalidate",
-      });
+      })
 
-      res.end(htmlWithBridge);
+      res.end(htmlWithBridge)
     } catch (error) {
       res.writeHead(500, {
         "Content-Type": "text/plain; charset=utf-8",
-      });
+      })
 
-      res.end(error instanceof Error ? error.message : String(error));
+      res.end(error instanceof Error ? error.message : String(error))
     }
 
-    return;
+    return
   }
 
   sendJson(res, 404, {
     ok: false,
     error: "Not found",
-  });
-});
+  })
+})
 
 ensureStorage()
   .then(() => {
     server.listen(PORT, () => {
-      console.log(
-        `Remotion control server running at http://localhost:${PORT}`,
-      );
-    });
+      console.log(`Remotion control server running at http://localhost:${PORT}`)
+    })
   })
   .catch((error) => {
-    console.error("Failed to start Remotion control server:", error);
-    process.exit(1);
-  });
+    console.error("Failed to start Remotion control server:", error)
+    process.exit(1)
+  })
