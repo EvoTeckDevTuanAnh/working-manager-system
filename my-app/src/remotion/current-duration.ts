@@ -1,1 +1,1 @@
-export const currentDurationSeconds = 12
+export const currentDurationSeconds = 60

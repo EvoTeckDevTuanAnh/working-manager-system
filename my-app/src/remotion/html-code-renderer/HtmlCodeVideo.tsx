@@ -3,6 +3,7 @@ import {
   AbsoluteFill,
   continueRender,
   delayRender,
+  getRemotionEnvironment,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion"
@@ -16,6 +17,10 @@ export function HtmlCodeVideo() {
 
   const [loadHandle] = useState(() => delayRender("Loading HTML code iframe"))
   const [isIframeReady, setIsIframeReady] = useState(false)
+
+  const remotionEnvironment = useMemo(() => {
+    return getRemotionEnvironment()
+  }, [])
 
   const iframeSrc = useMemo(() => {
     return `${CONTROL_SERVER_URL}/code-preview.html?t=${Date.now()}`
@@ -33,8 +38,11 @@ export function HtmlCodeVideo() {
           : frame / (videoConfig.durationInFrames - 1),
       width: videoConfig.width,
       height: videoConfig.height,
+      isRendering: remotionEnvironment.isRendering,
+      isStudio: remotionEnvironment.isStudio,
+      isPlayer: remotionEnvironment.isPlayer,
     }),
-    [frame, videoConfig],
+    [frame, remotionEnvironment, videoConfig],
   )
 
   useEffect(() => {
@@ -71,7 +79,7 @@ export function HtmlCodeVideo() {
 
     const timeout = window.setTimeout(() => {
       finishFrame()
-    }, 1200)
+    }, 5000)
 
     const onMessage = (event: MessageEvent) => {
       const data = event.data
